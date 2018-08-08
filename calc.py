@@ -23,22 +23,44 @@ import os
 import csv
 import sys
 
-def calc_prac_perf(runinitdate, sixhr, rtime):
+def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
+    '''
+    A method which interpolates a function 
+    z(grid1x, grid1y) of a grid (grid1x, grid1y) to another 
+    grid (grid2x, grid2y). Returns an array from the approximated
+    function of the second grid (approximation of z(grid2x, grid2y)).
+    '''
+    # Pair flattened x and y values as coordinates
+    coords_from = list(zip(grid1y.flatten(), grid1x.flatten()))
+    Z = z.flatten()
+    # Set up interpolation function with original grid and interp variable
+    interp = sp.interpolate.LinearNDInterpolator(coords_from, Z, fill_value=9e9)
+    # Interpolate to new grid
+    interpolated_z = interp(grid2y, grid2x)
+    
+    return interpolated_z
+
+def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     '''
     Implementation of SPC practically perfect
     calculations adapted from SPC code
     
     Inputs
     ------
-    runinitdate - datetime obj for 
-                    SPC storm reports
-    sixhr-------- boolean specifying whether
+    runinitdate -- datetime obj for 
+                    model initialization being
+                    used.
+    sixhr -------- boolean specifying whether
                     to calculate practically perfect
                     probs over six hr time window or 
-                    use one hr time window
-    rtime ------- time (in num fcst hrs
+                    use one hr time window.
+    rtime -------- time (in num fcst hrs
                     from runinit) to obtain six hr
-                    practically perfect
+                    or one hr practically perfect.
+    sigma -------- optional integer specifying sigma
+                    to use for Gaussian filter.
+                    Operational practically perfect uses
+                    the default sgma of 2.
     Outputs
     -------
     returns tuple containing pract perf probs 
@@ -74,7 +96,7 @@ def calc_prac_perf(runinitdate, sixhr, rtime):
             ct = ct+1
     	
     #Get lats and lons for practically perfect grid
-    zppfile = 'pperf_grid_template.npz'
+    ppfile = 'pperf_grid_template.npz'
     f = np.load(ppfile)
     lon = f["lon"]
     lat = f["lat"]
@@ -82,16 +104,16 @@ def calc_prac_perf(runinitdate, sixhr, rtime):
     f.close()
     
     # Get WRF lats/lons as pperf grid
-    #ppfile = '/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'
-    #dat = Dataset(ppfile)
-    #lon = dat.variables['XLONG'][0]
-    #lat = dat.variables['XLAT'][0]
-    #print(np.shape(lon))
-    #dat.close()
+    ppfile = '/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'
+    dat = Dataset(ppfile)
+    wrflon = dat.variables['XLONG'][0]
+    wrflat = dat.variables['XLAT'][0]
+    print(np.shape(lon))
+    dat.close()
     
     #If there aren't any reports, practically perfect is zero across grid
     if length == 0:
-    	pperf = np.zeros_like(lon)    
+    	pperf = np.zeros_like(wrflon)    
     #Otherwise, let's grid the reports
     else:
         # If six hour, mask reports by valid times in window
@@ -111,6 +133,8 @@ def calc_prac_perf(runinitdate, sixhr, rtime):
         
             # Convert lat/lon grid into projection space
             X, Y = NDFD(lon, lat) 
+            WRFX, WRFY = NDFD(wrflon, wrflat)
+            #print(WRFX.shape, WRFY.shape)
             # Convert lat/lon reports into projection space
             x, y = NDFD(lons, lats) 
         
@@ -127,22 +151,30 @@ def calc_prac_perf(runinitdate, sixhr, rtime):
             # Loop through all points and increment that grid cell by 1
             for xi, yi in zip(xind, yind):
                 grid[xi, yi] = 1
+            #print(grid)
     
-        	#Gaussian smoother over our grid to create practically perfect probs
-            if sixhr:
-                pperf = ndimage.gaussian_filter(grid,sigma=1,order=0)
-            else:
-                pperf = ndimage.gaussian_filter(grid,sigma=0,order=0)
+        	# Gaussian smoother over our grid to create practically perfect probs
+            tmppperf = ndimage.gaussian_filter(grid,sigma=sigma, order=0)
+            
+            # Interpolate to WRF grid
+            pperf = bilinear_interp(X, Y, WRFX, WRFY, tmppperf)
+            #print(np.shape(pperf))
         except:
-            pperf = np.zeros_like(lon)
+            pperf = np.zeros_like(wrflon)
     
     #Remove report CSV file
-    os.remove(rptfile)
+    os.remove(rptfile)    
+    #print(sigma)
+    print("Practicaly Perfect min/max: ", np.min(pperf), ' , ', np.max(pperf))
     
-    return pperf, lon, lat
-
-def FSS(probpath, obspath, time, var='updraft_helicity', 
-        thresh=25., probthresh=0.5, rboxpath=None):
+    return pperf, wrflon, wrflat
+    
+#############################################################
+# Begin verification metrics
+#############################################################    
+    
+def FSS(probpath, obspath, time, outpath, var='updraft_helicity', 
+        thresh=25., probthresh=0.5, rboxpath=None, subset=False):
     '''
     Calculates fractional skill score for a probabilstic
     ensemble forecast and stores it in a csv file. Obs
@@ -170,6 +202,7 @@ def FSS(probpath, obspath, time, var='updraft_helicity',
     fhrs = obsdat.variables['fhr'][:]
     #print(obtimes, time)
     obind = np.where(fhrs-date2num(time, 'hours since ' + initstr) == 0)[0][0]
+    datetimestr = str(time)
     print(obind)
     # Choose correct indices based on variable and threshold
     probinds = {'reflectivity' : {40 : 0}, 
@@ -189,7 +222,7 @@ def FSS(probpath, obspath, time, var='updraft_helicity',
     wrf.disable_xarray()
     lats = wrf.getvar(probdat, 'lat')
     lons = wrf.getvar(probdat, 'lon')
-    npts = len(lats[:,0]) * len(lons[0,:])f
+    npts = len(lats[:,0]) * len(lons[0,:])
     #prob_gt_than = (probs >= probthresh)
     fbs = 0.
     fbs_worst = 0.
@@ -202,9 +235,15 @@ def FSS(probpath, obspath, time, var='updraft_helicity',
             #print(probs[j,i], obs[obind,j,i])
     fbs, fbs_worst = fbs/npts, fbs_worst/npts
     # Use FBS and FBS worst to calculate FSS for whole grid
-    fss = 1 - (fbs/fbs_worst)
-    print(fss)
-    print(npts)
+    fss_all = 1 - (fbs/fbs_worst)
+    print("FSS Total and num points: ", fss_all, ',', npts)
+    
+    # Decide whether we're creating or appending to output csv
+    if os.path.exists(outpath):
+        mode = 'a'
+    else:
+        mode = 'w'
+    
     # Calculate FSS within response box if using sensitivity
     if rboxpath is not None:
         sensin = np.genfromtxt(rboxpath, dtype=str)
@@ -215,10 +254,10 @@ def FSS(probpath, obspath, time, var='updraft_helicity',
         mask = lonmask & latmask
         masked_probs = probs[mask]
         masked_obs = obs[obind][mask]
-        print(rbox)
+        #print(rbox)
         #print(lats[mask], lons[mask])
         #print(np.shape(masked_lons))
-        print(len(probs[mask]))
+        #print(len(probs[mask]))
         npts = len(probs[mask])
         fbs = 0.
         fbs_worst = 0.
@@ -227,8 +266,25 @@ def FSS(probpath, obspath, time, var='updraft_helicity',
             fbs_worst += masked_probs[i]**2 + masked_obs[i]**2
         fbs, fbs_worst = fbs/npts, fbs_worst/npts
         # Use FBS and FBS worst to calculate FSS for whole grid
-        fss = 1 - (fbs/fbs_worst)
-    print(fss)    
+        fss_rbox = 1 - (fbs/fbs_worst)
+        print("FSS Rbox and num points: ", fss_rbox, ',', npts)
+        
+        # Write total fractional skill score and fss within rbox to csv
+        with open(outpath, mode) as csvfile:
+            if mode == 'w':
+                header = "Date, Total FSS, Response Box FSS, Subset\n"
+                csvfile.write(header)
+            row = datetimestr + ',' + str(fss_all) + ',' + \
+            str(fss_rbox) + ',' + str(subset) + '\n'
+            csvfile.write(row)
+    else:
+        with open(outpath, mode) as csvfile:
+            if mode == 'w':
+                header = "Date, Total FSS"
+                csvfile.write(header)
+            row = datetimestr + ',' + str(fss_all) + '\n'
+            csvfile.write(row)
+    #print(fss)    
     #print(rbox)
     return
     

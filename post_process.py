@@ -296,7 +296,7 @@ def process_wrf(inpaths, outpath, reduced=True,
     return
 
 # Post-process practically perfect
-def storePracPerf(modelinit, fcsthrs, outpath):
+def storePracPerf(modelinit, fcsthrs, outpath, sigma=2):
     '''
     Calculate hourly practically perfect on WRF grid.
     Save to netCDF file for verification.
@@ -320,7 +320,7 @@ def storePracPerf(modelinit, fcsthrs, outpath):
     # Create outfile
     netcdf_out = Dataset(outpath, 'w')
     # Calculate pperf to pull lat/lon data
-    pperf, lon, lat = calc_prac_perf(modelinit, False, fcsthrs[0])
+    pperf, lon, lat = calc_prac_perf(modelinit, False, fcsthrs[0], sigma=sigma)
     # Set up netCDF
     netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
     netcdf_out.createDimension('Time', len(fcsthrs))
@@ -330,7 +330,7 @@ def storePracPerf(modelinit, fcsthrs, outpath):
     pperfout = netcdf_out.createVariable('practically_perfect', float, ('Time', 'south_north', 'west_east'))
     # Populate outfile with pperf
     for t in range(len(fcsthrs)):
-        pperf, lon, lat = calc_prac_perf(modelinit, False, fcsthrs[t])
+        pperf, lon, lat = calc_prac_perf(modelinit, False, fcsthrs[t], sigma=sigma)
         pperfout[t] = pperf[:]*100.
         times[t] = fcsthrs[t]
     netcdf_out.close()
