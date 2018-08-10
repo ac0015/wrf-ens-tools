@@ -68,6 +68,15 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     '''
     #Get initialization date
     runinitdatef = runinitdate.strftime('%y%m%d')
+    rdate = runinitdate + timedelta(hours=rtime)
+    # Since reports are from 12Z - 1159Z, make sure
+    #  we are grabbing the correct date.
+    if (rtime > 23) & (runinitdate.hour == 12):
+        runinitdatef = (runinitdate + timedelta(days=1)).strftime('%y%m%d')
+    elif (rtime > 35) & (runinitdate.hour == 0):
+        runinitdatef = (runinitdate + timedelta(days=1)).strftime('%y%m%d')
+    print('Pullng SPC reports from ', runinitdatef)
+    print('Response time ', rdate)
     
     #Get yesterday's reports CSV file from web
     rptfile = runinitdatef+'_rpts_filtered.csv'
@@ -96,11 +105,10 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
             ct = ct+1
     	
     #Get lats and lons for practically perfect grid
-    ppfile = 'pperf_grid_template.npz'
+    ppfile = '/lustre/work/aucolema/scripts/pperf_grid_template.npz'
     f = np.load(ppfile)
     lon = f["lon"]
     lat = f["lat"]
-    print(np.shape(lon))
     f.close()
     
     # Get WRF lats/lons as pperf grid
@@ -108,7 +116,6 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     dat = Dataset(ppfile)
     wrflon = dat.variables['XLONG'][0]
     wrflat = dat.variables['XLAT'][0]
-    print(np.shape(lon))
     dat.close()
     
     #If there aren't any reports, practically perfect is zero across grid
@@ -118,12 +125,13 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     else:
         # If six hour, mask reports by valid times in window
         if sixhr:
-            rdate = runinitdate + timedelta(hours=rtime)
             hour = rdate.hour
             hours = [(hour - i)%24 for i in range(1,7)]
             mask = [(hr in hours) for hr in time]
         else:
-            mask = [(hr == (rtime-1)%24) for hr in time]
+            hour = rdate.hour
+            mask = [(hr == (hour-1)%24) for hr in time]
+            #print('Report hours from reports used:', np.array(time)[mask])
             #print(mask)
             #print(time)
         try:
@@ -165,7 +173,7 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     #Remove report CSV file
     os.remove(rptfile)    
     #print(sigma)
-    print("Practicaly Perfect min/max: ", np.min(pperf), ' , ', np.max(pperf))
+    print("Practically Perfect min/max: ", np.min(pperf), ' , ', np.max(pperf))
     
     return pperf, wrflon, wrflat
     
@@ -173,8 +181,8 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
 # Begin verification metrics
 #############################################################    
     
-def FSS(probpath, obspath, time, outpath, var='updraft_helicity', 
-        thresh=25., probthresh=0.5, rboxpath=None, subset=False):
+def FSS(probpath, obspath, time, var='updraft_helicity', 
+        thresh=25., rboxpath=None):
     '''
     Calculates fractional skill score for a probabilstic
     ensemble forecast and stores it in a csv file. Obs
@@ -186,7 +194,8 @@ def FSS(probpath, obspath, time, outpath, var='updraft_helicity',
                 probability values. IMPORTANT
                 NOTE - prob file is expected to
                 be organized like in probcalcSUBSET.f
-                 Variable P_HYD[0,:,:,:]:
+                 Variable P_HYD[0,i,:,:]:
+                  i         Var
                  [0]   Refl > 40 dBZ probs 
                  [1]   UH > 25 m2/s2 probs 
                  [2]   UH > 100 m2/s2 probs
@@ -200,10 +209,9 @@ def FSS(probpath, obspath, time, outpath, var='updraft_helicity',
     runinit = datetime(year=int(initstr[:4]), month=int(initstr[5:7]), 
                        day=int(initstr[8:10]))
     fhrs = obsdat.variables['fhr'][:]
-    #print(obtimes, time)
     obind = np.where(fhrs-date2num(time, 'hours since ' + initstr) == 0)[0][0]
     datetimestr = str(time)
-    print(obind)
+
     # Choose correct indices based on variable and threshold
     probinds = {'reflectivity' : {40 : 0}, 
                 'updraft_helicity' : {25 : 1, 100 : 2},
@@ -211,9 +219,10 @@ def FSS(probpath, obspath, time, outpath, var='updraft_helicity',
     # If UH, pull practically perfect
     if var == 'updraft_helicity':
         obs = obsdat.variables['practically_perfect'][:]
-        #obs_gt_than = 
+        sig = obsdat.variables['sigma'][:]
     else:
         raise ValueError('Support for {} not yet built in.'.format(var))
+            
     # Pull and splice probability variable
     probvar = probdat.variables['P_HYD'][0]
     d = probinds[var]
@@ -226,66 +235,46 @@ def FSS(probpath, obspath, time, outpath, var='updraft_helicity',
     #prob_gt_than = (probs >= probthresh)
     fbs = 0.
     fbs_worst = 0.
-    print(np.max(probs), np.max(obs[obind]))
-    print(np.shape(probs), np.shape(obs[obind]))
-    for i in range(len(lons[0,:])):
-        for j in range(len(lats[:,0])):
-            fbs += (probs[j,i] - obs[obind,j,i])**2
-            fbs_worst += probs[j,i]**2 + obs[obind,j,i]**2
-            #print(probs[j,i], obs[obind,j,i])
-    fbs, fbs_worst = fbs/npts, fbs_worst/npts
-    # Use FBS and FBS worst to calculate FSS for whole grid
-    fss_all = 1 - (fbs/fbs_worst)
-    print("FSS Total and num points: ", fss_all, ',', npts)
-    
-    # Decide whether we're creating or appending to output csv
-    if os.path.exists(outpath):
-        mode = 'a'
-    else:
-        mode = 'w'
-    
-    # Calculate FSS within response box if using sensitivity
-    if rboxpath is not None:
-        sensin = np.genfromtxt(rboxpath, dtype=str)
-        rbox = sensin[4:8]
-        llon, ulon, llat, ulat = np.array(rbox, dtype=float)
-        lonmask = (lons > llon) & (lons < ulon)
-        latmask = (lats > llat) & (lats < ulat)
-        mask = lonmask & latmask
-        masked_probs = probs[mask]
-        masked_obs = obs[obind][mask]
-        #print(rbox)
-        #print(lats[mask], lons[mask])
-        #print(np.shape(masked_lons))
-        #print(len(probs[mask]))
-        npts = len(probs[mask])
-        fbs = 0.
-        fbs_worst = 0.
-        for i in range(len(masked_probs)):
-            fbs += (masked_probs[i] - masked_obs[i])**2
-            fbs_worst += masked_probs[i]**2 + masked_obs[i]**2
+    print('Max ens probs and max ob probs: ', np.max(probs), np.max(obs[obind]))
+    if (np.max(obs[obind]) > 0.) or (np.max(probs) > 0.):
+        #print(np.shape(probs), np.shape(obs[obind]))
+        for i in range(len(lons[0,:])):
+            for j in range(len(lats[:,0])):
+                fbs += (probs[j,i] - obs[obind,j,i])**2
+                fbs_worst += probs[j,i]**2 + obs[obind,j,i]**2
+                #print(probs[j,i], obs[obind,j,i])
+        print('FBS: ', fbs)
         fbs, fbs_worst = fbs/npts, fbs_worst/npts
         # Use FBS and FBS worst to calculate FSS for whole grid
-        fss_rbox = 1 - (fbs/fbs_worst)
-        print("FSS Rbox and num points: ", fss_rbox, ',', npts)
+        fss_all = 1 - (fbs/fbs_worst)
+        print("FSS Total and num points: ", fss_all, ',', npts)
         
-        # Write total fractional skill score and fss within rbox to csv
-        with open(outpath, mode) as csvfile:
-            if mode == 'w':
-                header = "Date, Total FSS, Response Box FSS, Subset\n"
-                csvfile.write(header)
-            row = datetimestr + ',' + str(fss_all) + ',' + \
-            str(fss_rbox) + ',' + str(subset) + '\n'
-            csvfile.write(row)
+        # Calculate FSS within response box if using sensitivity
+        if rboxpath is not None:
+            sensin = np.genfromtxt(rboxpath, dtype=str)
+            rbox = sensin[4:8]
+            llon, ulon, llat, ulat = np.array(rbox, dtype=float)
+            lonmask = (lons > llon) & (lons < ulon)
+            latmask = (lats > llat) & (lats < ulat)
+            mask = lonmask & latmask
+            masked_probs = probs[mask]
+            masked_obs = obs[obind][mask]
+            npts = len(probs[mask])
+            fbs = 0.
+            fbs_worst = 0.
+            for i in range(len(masked_probs)):
+                fbs += (masked_probs[i] - masked_obs[i])**2
+                fbs_worst += masked_probs[i]**2 + masked_obs[i]**2
+            fbs, fbs_worst = fbs/npts, fbs_worst/npts
+            print('FBS: ', fbs)
+            # Use FBS and FBS worst to calculate FSS for whole grid
+            fss_rbox = 1 - (fbs/fbs_worst)
+            print("FSS Rbox and num points: ", fss_rbox, ',', npts)
+        else:
+            fss_rbox = 9e9
     else:
-        with open(outpath, mode) as csvfile:
-            if mode == 'w':
-                header = "Date, Total FSS"
-                csvfile.write(header)
-            row = datetimestr + ',' + str(fss_all) + '\n'
-            csvfile.write(row)
-    #print(fss)    
-    #print(rbox)
-    return
+        print('NULL time/case, cannot calculate FSS')
+
+    return fss_all, fss_rbox, sig
     
         

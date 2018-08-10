@@ -326,8 +326,11 @@ def storePracPerf(modelinit, fcsthrs, outpath, sigma=2):
     netcdf_out.createDimension('Time', len(fcsthrs))
     netcdf_out.createDimension('south_north', len(lat[:,0]))
     netcdf_out.createDimension('west_east', len(lon[0,:]))
+    netcdf_out.createDimension('sig', 1)
     times = netcdf_out.createVariable('fhr', int, ('Time'))
+    sig = netcdf_out.createVariable('sigma', int, ('sig'))
     pperfout = netcdf_out.createVariable('practically_perfect', float, ('Time', 'south_north', 'west_east'))
+    sig[:] = sigma
     # Populate outfile with pperf
     for t in range(len(fcsthrs)):
         pperf, lon, lat = calc_prac_perf(modelinit, False, fcsthrs[t], sigma=sigma)
