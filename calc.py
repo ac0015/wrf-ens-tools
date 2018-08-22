@@ -40,6 +40,103 @@ def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
     
     return interpolated_z
 
+def nearest_neighbor_spc(runinitdate, sixhr, rtime):
+    '''
+    Calculates nearest neighbor of storm reports 
+    valid over a 1-hr or 6-hr time frame with
+    native TTU WRF grid. Returns the WRF grid
+    in the form of binary hits and misses based
+    on SPC storm report locations.
+    '''
+    #Get initialization date
+    rdate = runinitdate + timedelta(hours=rtime)
+    # Since reports are from 12Z - 1159Z, make sure
+    #  we are grabbing the correct date.
+    if (rtime > 23) & (runinitdate.hour == 12):
+        runinitdatef = (runinitdate + timedelta(days=1)).strftime('%y%m%d')
+    elif (rtime > 35) & (runinitdate.hour == 0):
+        runinitdatef = (runinitdate + timedelta(days=1)).strftime('%y%m%d')
+    print('Pullng SPC reports from ', runinitdatef)
+    print('Response time ', rdate)
+    
+    ########## Using Robert Hepper's code for nearest neighbor ######
+    ########## w/out calculating practically perfect ################ 
+    #Get reports CSV file from web
+    rptfile = runinitdatef+'_rpts_filtered.csv'
+    add = 'www.spc.noaa.gov/climo/reports/'+rptfile
+    call(['wget',add])
+    
+    #Make lists of report lats and lons 
+    try:
+        with open(rptfile) as csvf:
+            r = csv.reader(csvf)
+            mylist = list(r)
+    except IOError:
+        print('Report CSV file could not be opened.')
+        sys.exit()
+    
+    length = len(mylist)-3
+    time = [0]*length
+    lats = [0]*length
+    lons = [0]*length
+    ct = 0
+    for f in mylist:
+        if 'Time' not in f and 'Comments' not in f:	
+            time[ct] = int(str(f[0])[:2])
+            lats[ct] = float(f[5])
+            lons[ct] = float(f[6])
+            ct = ct+1
+
+    # Get WRF lats/lons as pperf grid
+    wrffile = '/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'
+    dat = Dataset(wrffile)
+    lon = dat.variables['XLONG'][0]
+    lat = dat.variables['XLAT'][0]
+    dat.close()
+    
+    #If there aren't any reports, zero across grid
+    if length == 0:
+        grid = np.zeros_like(lon)    
+        
+    #Otherwise, let's grid the reports
+    else:
+        # If six hour, mask reports by valid times in window
+        if sixhr:
+            hour = rdate.hour
+            hours = [(hour - i)%24 for i in range(1,7)]
+            mask = [(hr in hours) for hr in time]
+        else:
+            hour = rdate.hour
+            mask = [(hr == (hour-1)%24) for hr in time]
+            print('Reports valid {} to {}'.format((hour-1)%24,hour))
+        try:
+            #Set up empty grid onto correct projection
+            grid = np.zeros_like(lon)
+            NDFD = pyproj.Proj("+proj=lcc +lat_1=25 +lat_2=25 +lon_0=-95 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") 
+        
+            # Convert lat/lon grid into projection space
+            X, Y = NDFD(lon, lat) 
+            # Convert lat/lon reports into projection space
+            x, y = NDFD(lons, lats) 
+        
+            #Create KD-Tree for effecient lookup
+            gpoints = np.array(list(zip(X.ravel(), Y.ravel())))
+            gtree = sp.spatial.cKDTree(gpoints) 
+        
+            # Run the KD-Tree to get distances to nearest gridbox and then index of nearest grid point
+            dists, inds = gtree.query(np.array(list(zip(x, y))), distance_upper_bound=1000000000.)
+                                      
+            # Convert index of 1D array into index of 2D lat/lon array
+            xind, yind = np.unravel_index(inds[mask], X.shape)
+            
+            # Loop through all points and increment that grid cell by 1
+            for xi, yi in zip(xind, yind):
+                grid[xi, yi] = 1
+        except:
+            grid = np.zeros_like(lon)
+            
+        return grid
+
 def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     '''
     Implementation of SPC practically perfect
@@ -112,8 +209,8 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     f.close()
     
     # Get WRF lats/lons as pperf grid
-    ppfile = '/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'
-    dat = Dataset(ppfile)
+    wrffile = '/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'
+    dat = Dataset(wrffile)
     wrflon = dat.variables['XLONG'][0]
     wrflat = dat.variables['XLAT'][0]
     dat.close()
@@ -232,8 +329,8 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
     fss_rbox - fractional skill score as float valid
                 for response box. If not verifying 
                 subsets, then returns 9e9.
-    sigma ---- same sigma specified by input for
-                keeping track.
+    sigma ---- sigma value of practically perfect stored
+                in obspath.
     '''
     # Open probabilistic forecast and observational datasets
     probdat = Dataset(probpath)
@@ -309,4 +406,82 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
 
     return fss_all, fss_rbox, sig
     
+def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity', 
+        thresh=25., rboxpath=None, sixhr=False):
+    '''
+    Calculates reliability for a probabilstic
+    ensemble forecast and returns it. Obs
+    need to be pre-interpolated to native model grid.
+    
+    Inputs
+    ------
+    probpath --- path to netCDF file containing 
+                 probability values. IMPORTANT
+                 NOTE - prob file is expected to
+                 be organized like in probcalcSUBSET.f
+                  Variable P_HYD[0,i,:,:]:
+                   i         Var
+                  [0]   Refl > 40 dBZ probs 
+                  [1]   UH > 25 m2/s2 probs 
+                  [2]   UH > 40 m2/s2 probs
+                  [3]   UH > 100 m2/s2 probs
+                  [4]   Wind Speed > 40 mph probs
+    runinitdate - datetime obj describing model initiation
+                  time. Used to pull correct storm reports.
+    fhr --------- integer describing response time in number
+                  of forecast hours.
+    var --------- string describing variable to verify.
+                  Only supports 'updraft_helicity'
+                  option as of right now.
+    thresh ------ float describing threshold of
+                  variable to use when 
+                  pulling probs. Choices
+                  for UH are 25, 40, and 100 m2/s2.
+                  Choices for Reflectivity and
+                  Wind Speed are 40 (dbz) and
+                  40 (mph) respectively.
+    rboxpath ---- optional path to sensitivity calc
+                  input file. Only needed if using
+                  FSS to verify subsets. Otherwise
+                  leave as None.
+    
+    Outputs
+    -------
+    Returns 
+    '''
+    prob_bins = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    # Open probabilistic forecast and observational datasets
+    probdat = Dataset(probpath)
+
+    # Choose correct indices based on variable and threshold
+    probinds = {'reflectivity' : {40 : 0}, 
+                'updraft_helicity' : {25 : 1, 40 : 2, 100 : 3},
+                'wind_speed' : {40 : 4}}
+            
+    if var == 'updraft_helicity':
+        grid = nearest_neighbor_spc(runinitdate, sixhr, fhr)
+    else:
+        print('Sorry, support for {} is not yet built in.'.format(var))
+    # Pull and splice probability variable
+    probvar = probdat.variables['P_HYD'][0]
+    d = probinds[var]
+    fcstprobs = probvar[d[int(thresh)]]
+    
+    # Sort probabilities into bins
+    fcst_freq = np.zeros((len(prob_bins)))
+    ob_freq = np.zeros((len(prob_bins)))
+    for i in range(len(prob_bins)):
+        prob = prob_bins[i]
+        fcstinds = np.where((fcstprobs - prob < 10) and (fcstprobs < prob))
+        print(np.min(fcstprobs[fcstinds]), np.max(fcstprobs[fcstinds]))
+        fcst_freq[i] = len(fcstinds)
+        hits = np.sum(grid[fcstinds])
+        tot = np.size(grid[fcstinds])
+        ob_freq[i] = hits/tot
+        print(hits, tot)
+    
+    return fcst_freq, ob_freq
+        
+        
+        
         
