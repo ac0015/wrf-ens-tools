@@ -131,6 +131,7 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
         else:
             hour = rdate.hour
             mask = [(hr == (hour-1)%24) for hr in time]
+            print('Reports valid {} to {}'.format((hour-1)%24,hour))
             #print('Report hours from reports used:', np.array(time)[mask])
             #print(mask)
             #print(time)
@@ -181,7 +182,7 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
 # Begin verification metrics
 #############################################################    
     
-def FSS(probpath, obspath, time, var='updraft_helicity', 
+def FSS(probpath, obspath, fhr, var='updraft_helicity', 
         thresh=25., rboxpath=None):
     '''
     Calculates fractional skill score for a probabilstic
@@ -198,24 +199,54 @@ def FSS(probpath, obspath, time, var='updraft_helicity',
                   i         Var
                  [0]   Refl > 40 dBZ probs 
                  [1]   UH > 25 m2/s2 probs 
-                 [2]   UH > 100 m2/s2 probs
-                 [3]   Wind Speed > 40 mph probs
+                 [2]   UH > 40 m2/s2 probs
+                 [3]   UH > 100 m2/s2 probs
+                 [4]   Wind Speed > 40 mph probs
+    obspath -- path to netCDF file containing
+                observation verification values.
+                Currently, practically perfect
+                for verifying UH is the only
+                verification type supported.
+    var ------ string describing variable to verify.
+                Only supports 'updraft_helicity'
+                option as of right now.
+    thresh --- float describing threshold of
+                variable to use when 
+                pulling probs. Choices
+                for UH are 25, 40, and 100 m2/s2.
+                Choices for Reflectivity and
+                Win Speed are 40 (dbz) and
+                40 (mph) respectively.
+    rboxpath - optional path to sensitivity calc
+                input file. Only needed if using
+                FSS to verify subsets. Otherwise
+                leave as None.
     
+    Outputs
+    -------
+    Returns fss_all, fss_rbox, and sigma back as a 
+    tuple. 
+    
+    fss_all -- fractional skill score as float for
+                whole domain.
+    fss_rbox - fractional skill score as float valid
+                for response box. If not verifying 
+                subsets, then returns 9e9.
+    sigma ---- same sigma specified by input for
+                keeping track.
     '''
     # Open probabilistic forecast and observational datasets
     probdat = Dataset(probpath)
     obsdat = Dataset(obspath)
     initstr = obsdat.START_DATE
-    runinit = datetime(year=int(initstr[:4]), month=int(initstr[5:7]), 
-                       day=int(initstr[8:10]))
     fhrs = obsdat.variables['fhr'][:]
-    obind = np.where(fhrs-date2num(time, 'hours since ' + initstr) == 0)[0][0]
-    datetimestr = str(time)
+    obind = np.where(fhrs-date2num(fhr, 'hours since ' + initstr) == 0)[0][0]
+    print("Fcst hr for FSS calc: ", fhrs[obind])
 
     # Choose correct indices based on variable and threshold
     probinds = {'reflectivity' : {40 : 0}, 
-                'updraft_helicity' : {25 : 1, 100 : 2},
-                'wind_speed' : {40 : 3}}
+                'updraft_helicity' : {25 : 1, 40 : 2, 100 : 3},
+                'wind_speed' : {40 : 4}}
     # If UH, pull practically perfect
     if var == 'updraft_helicity':
         obs = obsdat.variables['practically_perfect'][:]
@@ -227,7 +258,7 @@ def FSS(probpath, obspath, time, var='updraft_helicity',
     probvar = probdat.variables['P_HYD'][0]
     d = probinds[var]
     probs = probvar[d[int(thresh)]]
-    # First calculate FBS (Fractions Briar Score) on whole grid
+    # First calculate FBS (Fractions Brier Score) on whole grid
     wrf.disable_xarray()
     lats = wrf.getvar(probdat, 'lat')
     lons = wrf.getvar(probdat, 'lon')
@@ -267,6 +298,7 @@ def FSS(probpath, obspath, time, var='updraft_helicity',
                 fbs_worst += masked_probs[i]**2 + masked_obs[i]**2
             fbs, fbs_worst = fbs/npts, fbs_worst/npts
             print('FBS: ', fbs)
+            print('FBS Worst: ', fbs_worst)
             # Use FBS and FBS worst to calculate FSS for whole grid
             fss_rbox = 1 - (fbs/fbs_worst)
             print("FSS Rbox and num points: ", fss_rbox, ',', npts)
