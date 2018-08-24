@@ -461,7 +461,7 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
     if var == 'updraft_helicity':
         grid = nearest_neighbor_spc(runinitdate, sixhr, fhr)
     else:
-        print('Sorry, support for {} is not yet built in.'.format(var))
+        raise ValueError('Sorry, support for {} is not yet built in.'.format(var))
     # Pull and splice probability variable
     probvar = probdat.variables['P_HYD'][0]
     d = probinds[var]

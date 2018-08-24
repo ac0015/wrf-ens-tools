@@ -15,13 +15,13 @@ suite.
 import numpy as np
 import wrf
 from netCDF4 import Dataset
-from datetime import datetime, timedelta
-from shutil import copyfile
+from datetime import timedelta
 from calc import calc_prac_perf
 import os
 
-dflt_var = ['dbz', 'slp', 'updraft_helicity', 'wspd_wdir10']
+dflt_var = ['td2', 'T2']
 dflt_pres = [300., 500., 700., 850., 925.]
+dflt_outnames = ["2m_Dewpt", "2m_Temp"]
 
 def renameWRFOUT(enspath, ensnum, runinit, 
                  subdir='mem{}/', reduced=False, ntimes=48):
@@ -161,7 +161,7 @@ def gen_dict(enspath, ensnum, subdir="mem{}", ntimes=48):
 # Main post-processing method for deterministic or ensemble runs.
 def process_wrf(inpaths, outpath, reduced=True, 
                 refpath='/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2',
-                var=dflt_var, interp_levs=dflt_pres):
+                var=dflt_var, interp_levs=dflt_pres, outvar_names=dflt_outnames):
     '''
     A method for post-processing a list of WRF outfiles into 
     one interpolated outfile for use with the verification
@@ -236,64 +236,111 @@ def process_wrf(inpaths, outpath, reduced=True,
             # Process forecast hour t for member i
             dat = files[t]
             print("Processing time: " + str(t))
-            # Interpolate heights to pressure levels first
+            # Interpolate heights, temps, and winds to pressure levels first
+            wrf.disable_xarray()
             p = wrf.getvar(dat, 'p', units='hpa', cache=ref_cache)
             z = wrf.getvar(dat, 'z', units='m', cache=ref_cache)
+            temp = wrf.getvar(dat, 'temp', units='degC', cache=ref_cache)
+            u = wrf.getvar(dat, 'ua', units='m s-1', cache=ref_cache)
+            v = wrf.getvar(dat, 'va', units='m s-1', cache=ref_cache)
+            #uv = wrf.getvar(dat, 'wspd_wdir10', units='degC', cache=ref_cache)
+            
             # Use levels from UI
             for lev in interp_levs:
                 lev_ht = wrf.interplevel(z, p, lev)
-                ht_var = 'hgt_{}'.format(int(lev))
+                lev_temp = wrf.interplevel(temp, p, lev)
+                lev_u = wrf.interplevel(u, p, lev)
+                lev_v = wrf.interplevel(v, p, lev)
+                ht_var = '{}_hPa_GPH'.format(int(lev))
+                temp_var = '{}_hPa_T'.format(int(lev))
+                uvar = '{}_hPa_U'.format(int(lev))
+                vvar = '{}_hPa_V'.format(int(lev))
                 if ht_var not in outfile.variables.keys():
-                    outvar = outfile.createVariable(ht_var, lev_ht.dtype, 
+                    outvar_hgt = outfile.createVariable(ht_var, lev_ht.dtype, 
                                     (mems.name, time.name, lat.name, lon.name))
                 else:
-                    outvar = outfile.variables[ht_var]
-                outvar.units = 'm'
-                outvar[i,t] = lev_ht[:]
+                    outvar_hgt = outfile.variables[ht_var]
+                if temp_var not in outfile.variables.keys():
+                    outvar_temp = outfile.createVariable(temp_var, lev_temp.dtype, 
+                                (mems.name, time.name, lat.name, lon.name))
+                else:
+                    outvar_temp = outfile.variables[temp_var]
+                if uvar not in outfile.variables.keys():
+                    # If uvar isn't in there, then vvar isn't either, so
+                    #  create both.
+                    outvar_u = outfile.createVariable(uvar, lev_u.dtype, 
+                                    (mems.name, time.name, lat.name, lon.name))
+                    outvar_v = outfile.createVariable(vvar, lev_v.dtype, 
+                                    (mems.name, time.name, lat.name, lon.name))
+                else:
+                    outvar_u = outfile.variables[uvar]
+                    outvar_v = outfile.variables[vvar]
+                outvar_temp.units = 'degC'
+                outvar_temp[i,t] = lev_temp[:]
+                del lev_temp
+                outvar_u.units = 'm s-1'
+                outvar_v.units = 'm s-1'
+                outvar_u[i,t] = lev_u[:]
+                outvar_v[i,t] = lev_v[:]
+                del lev_u, lev_v
+                outvar_hgt.units = 'm'
+                outvar_hgt[i,t] = lev_ht[:]
                 del lev_ht
             # Process other variables requested by UI
+            k = 0
             for varname in var:
+                outvarnames = [outvar_names[k]]
+                #print(outvarnames)
+                nvars = len(np.shape(outvarnames))
+                #print(varname, dat)
                 invar = wrf.getvar(dat, varname, cache=ref_cache)
-                # Create variable if not created yet
-                if varname not in outfile.variables.keys():
-                    dimensions = [mems.name]
-                    if reduced:
-                        # Enable xarray to get units of the variable
-                        wrf.enable_xarray()
-                        dim_var = wrf.getvar(wrfref, varname)
-                        units = dim_var.units
-                        # Create list of dimensions
-                        for d in dim_var.dims:
-                            dimensions.append(d)
-                            if d not in outfile.dimensions:
-                                outfile.createDimension(d, dim_var.sizes[d])
-                        # If Time not the second dimension, insert it
-                        if dimensions[1] != t:
-                            dimensions.insert(1, time.name)
-                        wrf.disable_xarray()
+                for n in range(nvars): 
+                    outvarname = outvarnames[n]
+                    #print(outvarname)
+                    # Create variable if not created yet
+                    if outvarname not in outfile.variables.keys():
+                        dimensions = [mems.name]
+                        if reduced:
+                            # Enable xarray to get units of the variable
+                            wrf.enable_xarray()
+                            dim_var = wrf.getvar(wrfref, varname)
+                            units = dim_var.units
+                            # Create list of dimensions
+                            for d in dim_var.dims:
+                                dimensions.append(d)
+                                if d not in outfile.dimensions:
+                                    outfile.createDimension(d, dim_var.sizes[d])
+                            # If Time not the second dimension, insert it
+                            if dimensions[1] != t:
+                                dimensions.insert(1, time.name)
+                            wrf.disable_xarray()
+                        else:
+                            # Xarray already enabled, so pull units directly
+                            units = invar.units
+                            # Create list of dimensions
+                            for d in invar.dims:
+                                dimensions.append(d)
+                                if d not in outfile.dimensions:
+                                    outfile.createDimension(d, invar.sizes[d])
+                            # If Time not the second dimension, insert it
+                            if dimensions[1] != t:
+                                dimensions.insert(1, time.name)
+                        # Create variable and assign units
+                        tuple(dimensions)
+                        outvar = outfile.createVariable(outvarname, invar.dtype, dimensions)
+                        outvar.units = units
+                    # Otherwise, pull variable from outfile
                     else:
-                        # Xarray already enabled, so pull units directly
-                        units = invar.units
-                        # Create list of dimensions
-                        for d in invar.dims:
-                            dimensions.append(d)
-                            if d not in outfile.dimensions:
-                                outfile.createDimension(d, invar.sizes[d])
-                        # If Time not the second dimension, insert it
-                        if dimensions[1] != t:
-                            dimensions.insert(1, time.name)
-                    # Create variable and assign units
-                    tuple(dimensions)
-                    outvar = outfile.createVariable(varname, invar.dtype, dimensions)
-                    outvar.units = units
-                # Otherwise, pull variable from outfile
-                else:
-                    outvar = outfile.variables[varname]
-                outvar[i, t] = invar[:]
-                del invar
+                        outvar = outfile.variables[outvarname]
+                    if len(np.shape(invar)) > 2:
+                        outvar[i, t] = invar[n]
+                    else: 
+                        outvar[i, t] = invar[:]
+                    del invar
+                k += 1
             dat.close()
-    outfile.close()
-    return
+        outfile.close()
+        return
 
 # Post-process practically perfect
 def storePracPerf(modelinit, fcsthrs, outpath, sigma=2):
