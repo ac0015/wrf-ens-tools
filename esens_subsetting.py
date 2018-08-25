@@ -189,6 +189,7 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
     #print("RAP value(s): ", anlvar_masked[tmask==False])
     sens_masked = np.ma.masked_array(sensmat_masked, mask=tmask)
     for k in range(len(varkeys)):
+        print("Min sensitivity val for sens var {}: ".format(sensvars[k]), np.ma.min(np.abs(sens_masked[k])))
         print("Max sensitivity val for sens var {}: ".format(sensvars[k]), np.ma.max(sens_masked[k]))
         for i in range(fullensnum):
             # Apply percent sensfield and missing masks to member

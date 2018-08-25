@@ -58,6 +58,8 @@ class Subset:
         sensvars ------ list of strings containing the desired sensitivity variables
                         on which to base the subset. Must comply with naming conventions
                         of keys in the RAP interpolation from interp_analysis.py.
+        analysis_type - string specifying type of analysis to calculate sensitivity var
+                        errors. Currently accepts "RAP" or "WRF".
         '''
         self._sens = sens
         self._fullens = np.arange(1,sens.getEnsnum()+1,1)
