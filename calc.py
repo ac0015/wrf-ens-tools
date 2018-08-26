@@ -40,7 +40,8 @@ def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
     
     return interpolated_z
 
-def nearest_neighbor_spc(runinitdate, sixhr, rtime):
+def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
+                         wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'):
     '''
     Calculates nearest neighbor of storm reports 
     valid over a 1-hr or 6-hr time frame with
@@ -88,10 +89,10 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime):
             ct = ct+1
 
     # Get WRF lats/lons as pperf grid
-    wrffile = '/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'
-    dat = Dataset(wrffile)
+    dat = Dataset(wrfrefpath)
     lon = dat.variables['XLONG'][0]
     lat = dat.variables['XLAT'][0]
+    dx = dat.DX / 1000.
     dat.close()
     
     #If there aren't any reports, zero across grid
@@ -131,7 +132,9 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime):
             
             # Loop through all points and increment that grid cell by 1
             for xi, yi in zip(xind, yind):
-                grid[xi, yi] = 1
+                #grid[xi, yi] = 1
+                nbrhdinds = np.where((np.sqrt(((X - xi)*dx)**2 + ((Y - yi)*dx)**2)) <= nbrhd)
+                grid[nbrhdinds] = 1
         except:
             grid = np.zeros_like(lon)
             
@@ -283,8 +286,8 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
         thresh=25., rboxpath=None):
     '''
     Calculates fractional skill score for a probabilstic
-    ensemble forecast and stores it in a csv file. Obs
-    need to be pre-interpolated to native model grid.
+    ensemble forecast, Obs need to be pre-interpolated
+    to native model grid.
     
     Inputs
     ------
@@ -460,6 +463,9 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
             
     if var == 'updraft_helicity':
         grid = nearest_neighbor_spc(runinitdate, sixhr, fhr)
+        plt.figure()
+        plt.scatter(grid)
+        plt.show()
     else:
         raise ValueError('Sorry, support for {} is not yet built in.'.format(var))
     # Pull and splice probability variable
