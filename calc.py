@@ -474,19 +474,57 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
     fcstprobs = probvar[d[int(thresh)]]
     
     # Sort probabilities into bins
-    fcst_freq = np.zeros((len(prob_bins)))
-    ob_freq = np.zeros((len(prob_bins)))
+    fcstfreq_tot = np.zeros((len(prob_bins)))
+    fcstfreq_rbox = np.zeros((len(prob_bins)))
+    ob_hr_tot = np.zeros((len(prob_bins)))
+    ob_hr_rbox = np.zeros((len(prob_bins)))
+    
+    # Mask rbox if applicable
+    if rboxpath is not None:
+        sensin = np.genfromtxt(rboxpath, dtype=str)
+        rbox = sensin[4:8]
+        llon, ulon, llat, ulat = np.array(rbox, dtype=float)
+        lonmask = (lons > llon) & (lons < ulon)
+        latmask = (lats > llat) & (lats < ulat)
+        mask = lonmask & latmask
+        masked_probs = probs[mask]
+        masked_obs = obs[obind][mask]
+        
     for i in range(len(prob_bins)):
         prob = prob_bins[i]
-        fcstinds = np.where((fcstprobs - prob < 10) and (fcstprobs < prob))
-        print(np.min(fcstprobs[fcstinds]), np.max(fcstprobs[fcstinds]))
-        fcst_freq[i] = len(fcstinds)
-        hits = np.sum(grid[fcstinds])
-        tot = np.size(grid[fcstinds])
-        ob_freq[i] = hits/tot
-        print(hits, tot)
+        print("Prob bin valid from {}% to {}%".format(prob-10, prob))
+        fcstinds = np.where((fcstprobs - prob <= 10) & (fcstprobs < prob))
+        #print(np.min(fcstprobs[fcstinds]), np.max(fcstprobs[fcstinds]))
+        fcst_freq[i] = len(fcstinds[0])
+        if fcst_freq_all[i] == 0:
+            ob_hr_tot[i] = 9e9
+        else:
+            hits = np.sum(grid[fcstinds])
+            tot = np.size(grid[fcstinds])
+            ob_hr_tot[i] = hits/tot
+            print("Total Hits/Tot: ", hits, tot)
+        if rboxpath is not None:
+            fcstinds = np.where((masked_probs - prob <= 10) & (masked_probs < prob))
+            fcst_freq_rbox[i] = len(fcstinds[0])
+            if fcst_freq_rbox[i] == 0:
+                ob_hr_rbox[i] = 9e9
+            else:
+                hits = np.sum(masked_obs[fcstinds])
+                tot = np.size(masked_probs[fcstinds])
+                ob_hr_rbox[i] = hits/tot    
+                print("Rbox Hits/Total: ", hits, tot)
+        else:
+            fcst_freq_rbox[i] = 9e9
+            ob_hr_rbox[i] = 9e9
+            
+    totmask = (ob_hr_all == 9e9)
+    rboxmask = (ob_hr_rbox == 9e9)
+    fcst_freq_all_masked = np.ma.masked_array(fcst_freq_all, mask=totmask)
+    ob_hr_all_masked = np.ma.masked_array(ob_hr_all, mask=totmask)
+    fcst_freq_rbox_masked =  np.ma.masked_array(fcst_freq_rbox, mask=rboxmask)
+    ob_hr_rbox_masked =  np.ma.masked_array(ob_hr_rbox, mask=rboxmask)
     
-    return fcst_freq, ob_freq
+    return fcst_freq_all_masked, ob_hr_all_masked, fcst_freq_rbox_masked, ob_hr_rbox_masked
         
         
         
