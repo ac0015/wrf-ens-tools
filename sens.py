@@ -149,20 +149,6 @@ class Sens:
                      3 : "Avg 1h UH", 4 : "Max 1h UH", 
                      5 : "Accum PCP", 6 : "Avg Wind Spd"}
         self._rfuncstr = rfuncstrs[index]
-
-    def setHorizGridSpacing(self, dx):
-        '''
-        Set horizontal grid spacing of ensemble.
-        '''
-        self._dx = dx
-        return
-
-    def getHorizGridSpacing(self):
-        '''
-        Return horizontal grid spacing of ensemble
-        in use.
-        '''
-        return self._dx
     
     def getRIndex(self):
         '''

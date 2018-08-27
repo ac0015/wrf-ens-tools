@@ -10,7 +10,7 @@ import numpy as np
 from os import chdir
 from datetime import datetime, timedelta
 
-ncfiles = ['/lustre/research/bancell/aucolema/HWT2016runs/2016051300/fss.nc']
+ncfiles = ['/lustre/research/bancell/aucolema/HWT2016runs/2016051300/fssfinal.nc']
 # For second plot
 sens_var = ['300_hPa_GPH', '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind',
              '500_hPa_GPH', '500_hPa_T', '500_hPa_U-Wind', '500_hPa_V-Wind',
@@ -85,6 +85,8 @@ for file in ncfiles:
     sensvars = dat.variables['Sens_Vars'][inds]
     fens_all = dat.variables['Full_Ens_FSS_Total'][inds]
     fens_rbox = dat.variables['Full_Ens_FSS_Rbox'][inds]
+    fss_all = dat.variables['Subset_FSS_Total'][inds]
+    fss_rbox = dat.variables['Subset_FSS_Rbox'][inds]
     sens_mask = []
     for var in sensvars:
         #print(list(var), list(sens_var))

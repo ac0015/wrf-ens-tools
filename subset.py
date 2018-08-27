@@ -492,11 +492,11 @@ class Subset:
             fens_reliability = Reliability(fensprobpath, S.getRunInit(), S.getRTime(),
                                            obpath=None, var='updraft_helicity',
                                            thresh=self._thresh, rboxpath=S.getDir()+'esens.in',
-                                           sixhr=False)
+                                           sixhr=False, nbrhd=self._nbr)
             sub_reliability = Reliability(subprobpath, S.getRunInit(), S.getRTime(),
                                            obpath=None, var='updraft_helicity',
                                            thresh=self._thresh, rboxpath=S.getDir()+'esens.in',
-                                           sixhr=False)
+                                           sixhr=False, nbrhd=self._nbr)
             # prob_bins and ob hit rate variables will stay the same, so OK to clobber
             prob_bins, f_fcstfreq_tot, ob_hr_tot, f_fcstfreq_rbox, ob_hr_rbox = fens_reliability
             prob_bins, s_fcstfreq_tot, ob_hr_tot, s_fcstfreq_rbox, ob_hr_rbox = sub_reliability

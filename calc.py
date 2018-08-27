@@ -11,12 +11,11 @@ calculations.
 
 import wrf
 import numpy as np
-from netCDF4 import Dataset, date2num, num2date
-from datetime import datetime, timedelta
+from netCDF4 import Dataset, date2num
+from datetime import timedelta
 from subprocess import call
 from scipy import ndimage
-import matplotlib.patches as patches
-import cartopy.crs as ccrs
+import matplotlib.pyplot as plt
 import pyproj
 import scipy as sp
 import os
@@ -57,6 +56,8 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
         runinitdatef = (runinitdate + timedelta(days=1)).strftime('%y%m%d')
     elif (rtime > 35) & (runinitdate.hour == 0):
         runinitdatef = (runinitdate + timedelta(days=1)).strftime('%y%m%d')
+    else:
+        runinitdatef = runinitdate.strftime('%y%m%d')
     print('Pullng SPC reports from ', runinitdatef)
     print('Response time ', rdate)
     
@@ -92,6 +93,7 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
     dat = Dataset(wrfrefpath)
     lon = dat.variables['XLONG'][0]
     lat = dat.variables['XLAT'][0]
+    # Convert DX to kilometers
     dx = dat.DX / 1000.
     dat.close()
     
@@ -131,12 +133,21 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
             xind, yind = np.unravel_index(inds[mask], X.shape)
             
             # Loop through all points and increment that grid cell by 1
+            gridinds = np.indices(grid.shape)
+            print(gridinds.shape)
+            print(grid.shape)
             for xi, yi in zip(xind, yind):
-                #grid[xi, yi] = 1
-                nbrhdinds = np.where((np.sqrt(((X - xi)*dx)**2 + ((Y - yi)*dx)**2)) <= nbrhd)
-                grid[nbrhdinds] = 1
+                print(xi, yi)
+                print(nbrhd)
+                dists = (((gridinds[0,:,:]-xi)*dx)**2 + ((gridinds[1,:,:]-yi)*dx)**2)
+                #print(dists[dists<50.])
+                inds = np.where(dists <= nbrhd)
+                print(dists[inds])
+                print("Inds:", inds)
+                grid[inds] = 1
         except:
-            grid = np.zeros_like(lon)
+            raise
+            #grid = np.zeros_like(lon)
             
         return grid
 
@@ -410,7 +421,7 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
     return fss_all, fss_rbox, sig
     
 def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity', 
-        thresh=25., rboxpath=None, sixhr=False):
+        thresh=25., rboxpath=None, sixhr=False, nbrhd=0.):
     '''
     Calculates reliability for a probabilstic
     ensemble forecast and returns it. Obs
@@ -462,9 +473,9 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
                 'wind_speed' : {40 : 4}}
             
     if var == 'updraft_helicity':
-        grid = nearest_neighbor_spc(runinitdate, sixhr, fhr)
+        grid = nearest_neighbor_spc(runinitdate, sixhr, fhr, nbrhd=nbrhd)
         plt.figure()
-        plt.scatter(grid)
+        plt.imshow(grid)
         plt.show()
     else:
         raise ValueError('Sorry, support for {} is not yet built in.'.format(var))
@@ -472,12 +483,15 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
     probvar = probdat.variables['P_HYD'][0]
     d = probinds[var]
     fcstprobs = probvar[d[int(thresh)]]
+    wrf.disable_xarray()
+    lats = wrf.getvar(probdat, 'lat')
+    lons = wrf.getvar(probdat, 'lon')
     
     # Sort probabilities into bins
-    fcstfreq_tot = np.zeros((len(prob_bins)))
-    fcstfreq_rbox = np.zeros((len(prob_bins)))
-    ob_hr_tot = np.zeros((len(prob_bins)))
-    ob_hr_rbox = np.zeros((len(prob_bins)))
+    fcstfreq_tot = np.zeros((len(prob_bins)))   # N probs falling into bin for whole domain
+    fcstfreq_rbox = np.zeros((len(prob_bins)))  # N probs in rbox falling into bin
+    ob_hr_tot = np.zeros((len(prob_bins)))      # Ob hit rate for bin and whole domain
+    ob_hr_rbox = np.zeros((len(prob_bins)))     # Ob hit rate for bin in rbox
     
     # Mask rbox if applicable
     if rboxpath is not None:
@@ -487,16 +501,16 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
         lonmask = (lons > llon) & (lons < ulon)
         latmask = (lats > llat) & (lats < ulat)
         mask = lonmask & latmask
-        masked_probs = probs[mask]
-        masked_obs = obs[obind][mask]
+        masked_probs = fcstprobs[mask]
+        masked_obs = grid[mask]
         
     for i in range(len(prob_bins)):
         prob = prob_bins[i]
         print("Prob bin valid from {}% to {}%".format(prob-10, prob))
         fcstinds = np.where((fcstprobs - prob <= 10) & (fcstprobs < prob))
         #print(np.min(fcstprobs[fcstinds]), np.max(fcstprobs[fcstinds]))
-        fcst_freq[i] = len(fcstinds[0])
-        if fcst_freq_all[i] == 0:
+        fcstfreq_tot[i] = len(fcstinds[0])
+        if fcstfreq_tot[i] == 0:
             ob_hr_tot[i] = 9e9
         else:
             hits = np.sum(grid[fcstinds])
@@ -505,8 +519,8 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
             print("Total Hits/Tot: ", hits, tot)
         if rboxpath is not None:
             fcstinds = np.where((masked_probs - prob <= 10) & (masked_probs < prob))
-            fcst_freq_rbox[i] = len(fcstinds[0])
-            if fcst_freq_rbox[i] == 0:
+            fcstfreq_rbox[i] = len(fcstinds[0])
+            if fcstfreq_rbox[i] == 0:
                 ob_hr_rbox[i] = 9e9
             else:
                 hits = np.sum(masked_obs[fcstinds])
@@ -514,17 +528,17 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
                 ob_hr_rbox[i] = hits/tot    
                 print("Rbox Hits/Total: ", hits, tot)
         else:
-            fcst_freq_rbox[i] = 9e9
+            fcstfreq_rbox[i] = 9e9
             ob_hr_rbox[i] = 9e9
             
-    totmask = (ob_hr_all == 9e9)
+    totmask = (ob_hr_tot == 9e9)
     rboxmask = (ob_hr_rbox == 9e9)
-    fcst_freq_all_masked = np.ma.masked_array(fcst_freq_all, mask=totmask)
-    ob_hr_all_masked = np.ma.masked_array(ob_hr_all, mask=totmask)
-    fcst_freq_rbox_masked =  np.ma.masked_array(fcst_freq_rbox, mask=rboxmask)
+    fcst_freq_all_masked = np.ma.masked_array(fcstfreq_tot, mask=totmask)
+    ob_hr_all_masked = np.ma.masked_array(ob_hr_tot, mask=totmask)
+    fcst_freq_rbox_masked =  np.ma.masked_array(fcstfreq_rbox, mask=rboxmask)
     ob_hr_rbox_masked =  np.ma.masked_array(ob_hr_rbox, mask=rboxmask)
     
-    return fcst_freq_all_masked, ob_hr_all_masked, fcst_freq_rbox_masked, ob_hr_rbox_masked
+    return prob_bins, fcst_freq_all_masked, ob_hr_all_masked, fcst_freq_rbox_masked, ob_hr_rbox_masked
         
         
         
