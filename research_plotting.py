@@ -285,7 +285,7 @@ def plotPracPerf(runinitdate, sixhr, rtime, sigma=2, outpath='pperf.png'):
     plt.savefig(outpath)
     return
 
-def plotProbs(probpath, wrfrefpath, rbox, time, outpath=''):
+def plotProbs(probpath, wrfrefpath, rbox, time, nbrhd, outpath=''):
     '''
     Plots 1-hr probabilities for a specified time for each response
     function (fullens and subset) and overlays the response 
@@ -302,24 +302,17 @@ def plotProbs(probpath, wrfrefpath, rbox, time, outpath=''):
                     order (llon, ulon, llat, ulat).
     time -------- response time in number of forecast hours (only
                     used for label purposes).
+    nbrhd ------- neighborhood of probabilities used (in km)
     outpath ----- string specifying absolute path to store plots.
     '''
     # Get prob data
     probdat = Dataset(probpath)
     probs = probdat.variables['P_HYD'][0]
-    slpmean = probs[0]/100.
-    u10mean = probs[1]
-    v10mean = probs[2]
-    refl40fullens = probs[3]
-    uh25fullens = probs[4]
-    refl40subuhmax = probs[7]
-    uh25subuhmax = probs[8]
-    refl40subdbzcov = probs[11]
-    uh25subdbzcov = probs[12]
-    refl40subuhcov = probs[15]
-    uh25subuhcov = probs[16]
-    problist = [refl40fullens, uh25fullens, refl40subuhmax, uh25subuhmax,
-                refl40subdbzcov, uh25subdbzcov, refl40subuhcov, uh25subuhcov]
+    refl40fullens = probs[0]
+    uh25fullens = probs[1]
+    uh40fullens = probs[2]
+    uh100fullens = probs[3]
+    problist = [refl40fullens, uh25fullens, uh40fullens, uh100fullens]
     
     # Get lat/lon data
     wrfref = Dataset(wrfrefpath)
@@ -333,10 +326,10 @@ def plotProbs(probpath, wrfrefpath, rbox, time, outpath=''):
     height = ulat - llat 
 
     # Label Strings
-    rstrs = ['Reflectivity > 40 dBZ', r'UH > 25 m$^2$/s$^2$'] 
-    figstrs = ['refl40fullens', 'uhmax25fullens', 'refl40subuhmax',
-               'uhmax25subuhmax', 'refl40subdbzcov', 'uhmax25subdbzcov',
-               'refl40subuhcov', 'uhmax25subuhcov']
+    rstrs = ['Reflectivity > 40 dBZ', r'UH > 25 m$^2$/s$^2$', 
+             r'UH > 40 m$^2$/s$^2$', r'UH > 100 m$^2$/s$^2$'] 
+    figstrs = ['refl40fullens', 'uhmax25fullens', 'uhmax40fullens',
+               'uhmax100fullens']
 
     for i in range(len(figstrs)):
         fig = plt.figure(figsize=(10, 10))
@@ -354,22 +347,15 @@ def plotProbs(probpath, wrfrefpath, rbox, time, outpath=''):
                              fill=False, color='green', linewidth=2., zorder=3.)
         ax.add_patch(rbox)
         ax.set_extent([llon-10.0, ulon+10.0, llat-5.0, ulat+5.0])
-        # Set clevels for means
-        slplev = np.arange(970, 1043, 4)
-        # Plot means
-        slp = ax.contour(lons, lats, slpmean, slplev, colors='k', transform=ccrs.PlateCarree())
-        ax.barbs(lons[::25,::25], lats[::25,::25], 
-                          u10mean[::25,::25], v10mean[::25,::25], length=5, 
-                          linewidth=0.5, transform=ccrs.PlateCarree())
-        plt.clabel(slp)
         # Plot probs        
         cflevels = np.linspace(0., 100., 21)
         prob = ax.contourf(lons, lats, problist[i], cflevels, transform=ccrs.PlateCarree(), 
-                           cmap=nclcmaps.cmap('sunshine_9lev'), alpha=0.7, antialiased=True)
+                           cmap=nclcmaps.cmap('precip3_16lev'), alpha=0.7, antialiased=True)
         fig.colorbar(prob, fraction=0.046, pad=0.04, orientation='horizontal', label='Probability (Percent)')
         # Format titles and figure names
-        ax.set_title(r'Probability of {} at f{}'.format(rstrs[i%2], time))
-        plt.savefig('{}{}prob_{}'.format(outpath, figstrs[i], time))
+        ax.set_title(r'Probability of {} at f{} with Neighborhood of {} km'.format(rstrs[i], 
+                     time, nbrhd))
+        plt.savefig('{}{}nbr{}prob_{}'.format(outpath, figstrs[i], int(nbrhd), time))
         plt.close()
     return
         

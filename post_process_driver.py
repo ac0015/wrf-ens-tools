@@ -11,7 +11,6 @@ from sens import Sens
 from subset import Subset
 import os
 import sys
-import research_plotting as rp
 
 ################### EXPERIMENT SETUP ####################################
 direc = str(sys.argv[1])
@@ -57,7 +56,7 @@ for senstime in sens_times:
     S = Sens(infile=True, gui=True, run=init, 
              senstime=senstime)
     print('Using sens obj:', str(S))
-    #S.runAll()
+    S.runAll()
     # Calculate Full Ensemble probs and Practically Perfect probs
     rtime = S.getRTime()
     rdate = init + timedelta(hours=rtime)
@@ -67,12 +66,15 @@ for senstime in sens_times:
         pperfpaths.append(outpath)
         post.storePracPerf(init, [rtime], 
                            outpath, sigma=sig)
-    #for nbr in nbrs:
-    #    sub = Subset(S, nbrhd=nbr)
-    #    sub.calcProbs(sub._fullens)
-    #sub.interpRAP()
-    #del sub
-    statspath = direc + 'statstest.nc'
+    for nbr in nbrs:
+        sub = Subset(S, nbrhd=nbr)
+        sub.calcProbs(sub._fullens)
+        outpath = direc + 'reliability_ob_nbr{}.nc'.format(int(nbr))
+        post.storeNearestNeighbor(init, [rtime], 
+                                  outpath, nbrhd=nbr)
+    sub.interpRAP()
+    del sub
+    statspath = direc + 'stats.nc'
     # Get stats for different subset combos
     for subsize in subset_sizes:
         for method in subset_methods:
@@ -87,8 +89,10 @@ for senstime in sens_times:
                             sub.calcSubset()
                             sub.calcProbs(sub.getSubMembers())
                             #sub.plotSixPanels()
+                            reliabilityobpath = direc + 'reliability_ob_nbr{}.nc'.format(int(nbr))
                             for obpath in pperfpaths:
-                                sub.storeUHStats(outpath=statspath,pperfpath=obpath)
+                                sub.storeUHStats(outpath=statspath,pperfpath=obpath, 
+                                                 reliabilityobpath=reliabilityobpath)
                             del sub
                 
                 

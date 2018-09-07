@@ -16,7 +16,7 @@ import numpy as np
 import wrf
 from netCDF4 import Dataset
 from datetime import timedelta
-from calc import calc_prac_perf
+from calc import calc_prac_perf, nearest_neighbor_spc
 import os
 
 dflt_var = ['td2', 'T2']
@@ -385,7 +385,52 @@ def storePracPerf(modelinit, fcsthrs, outpath, sigma=2):
         times[t] = fcsthrs[t]
     netcdf_out.close()
     return
-     
+
+# Post-process nearest neighbor of SPC reports (for reliability)
+def storeNearestNeighbor(modelinit, fcsthrs, outpath, nbrhd):
+    '''
+    Calculate hourly nearest neighbor on WRF grid.
+    Save to netCDF file for verification.
+    
+    Inputs
+    ------
+    modelinit - WRF run initialization datetime obj
+                for formatting times correctly.
+                (WRF run doesn't need to exist,
+                just need baseline datetime to add
+                forecast hours to.)
+    fsthrs ---- list of forecast hour integers, or
+                hours since modelinit time.
+    outpath --- string specifying absolute path of
+                netCDF output.
+    nbrhd ----- float specifying desired neighborhood
+                value in km
+
+    Outputs
+    -------
+    returns NULL, but saves to netCDF outpath. 
+    '''
+    # Create outfile
+    netcdf_out = Dataset(outpath, 'w')
+    # Calculate pperf to pull lat/lon data
+    grid = nearest_neighbor_spc(modelinit, False, fcsthrs[0], nbrhd=nbrhd)
+    # Set up netCDF
+    netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
+    netcdf_out.createDimension('Time', len(fcsthrs))
+    netcdf_out.createDimension('south_north', len(grid[:,0]))
+    netcdf_out.createDimension('west_east', len(grid[0,:]))
+    netcdf_out.createDimension('nbrhd', 1)
+    times = netcdf_out.createVariable('fhr', int, ('Time'))
+    nbr = netcdf_out.createVariable('neighbor', int, ('nbrhd'))
+    nearest_out = netcdf_out.createVariable('nearest_neighbor', float, ('Time', 'south_north', 'west_east'))
+    nbr[:] = nbrhd
+    # Populate outfile with pperf
+    for t in range(len(fcsthrs)):
+        grid = nearest_neighbor_spc(modelinit, False, fcsthrs[t], nbrhd=nbrhd)
+        nearest_out[t] = grid[:]
+        times[t] = fcsthrs[t]
+    netcdf_out.close()
+    return     
 # TO-DO: to make real-time useable, add prob calculation
 # with procalcSUBSET.f
 def calcEnsProbs(enspath, members, wrfref):

@@ -134,20 +134,13 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
             
             # Loop through all points and increment that grid cell by 1
             gridinds = np.indices(grid.shape)
-            print(gridinds.shape)
-            print(grid.shape)
             for xi, yi in zip(xind, yind):
-                print(xi, yi)
-                print(nbrhd)
-                dists = (((gridinds[0,:,:]-xi)*dx)**2 + ((gridinds[1,:,:]-yi)*dx)**2)
+                dists = np.sqrt(((gridinds[0,:,:]-xi)*dx)**2 + ((gridinds[1,:,:]-yi)*dx)**2)
                 #print(dists[dists<50.])
                 inds = np.where(dists <= nbrhd)
-                print(dists[inds])
-                print("Inds:", inds)
                 grid[inds] = 1
         except:
-            raise
-            #grid = np.zeros_like(lon)
+            grid = np.zeros_like(lon)
             
         return grid
 
@@ -473,10 +466,13 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
                 'wind_speed' : {40 : 4}}
             
     if var == 'updraft_helicity':
-        grid = nearest_neighbor_spc(runinitdate, sixhr, fhr, nbrhd=nbrhd)
-        plt.figure()
-        plt.imshow(grid)
-        plt.show()
+        if obpath is not None:
+            dat = Dataset(obpath)
+            times = dat.variables['fhr'][:]
+            inds = np.where(times == fhr)
+            grid = dat.variables['nearest_neighbor'][inds][0]
+        else:
+            grid = nearest_neighbor_spc(runinitdate, sixhr, fhr, nbrhd=nbrhd)
     else:
         raise ValueError('Sorry, support for {} is not yet built in.'.format(var))
     # Pull and splice probability variable
@@ -507,7 +503,7 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
     for i in range(len(prob_bins)):
         prob = prob_bins[i]
         print("Prob bin valid from {}% to {}%".format(prob-10, prob))
-        fcstinds = np.where((fcstprobs - prob <= 10) & (fcstprobs < prob))
+        fcstinds = np.where((np.abs(fcstprobs - prob) <= 10) & (fcstprobs < prob))
         #print(np.min(fcstprobs[fcstinds]), np.max(fcstprobs[fcstinds]))
         fcstfreq_tot[i] = len(fcstinds[0])
         if fcstfreq_tot[i] == 0:
@@ -518,7 +514,7 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
             ob_hr_tot[i] = hits/tot
             print("Total Hits/Tot: ", hits, tot)
         if rboxpath is not None:
-            fcstinds = np.where((masked_probs - prob <= 10) & (masked_probs < prob))
+            fcstinds = np.where((np.abs(masked_probs - prob) <= 10) & (masked_probs < prob))
             fcstfreq_rbox[i] = len(fcstinds[0])
             if fcstfreq_rbox[i] == 0:
                 ob_hr_rbox[i] = 9e9

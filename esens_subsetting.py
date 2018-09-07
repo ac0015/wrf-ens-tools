@@ -41,7 +41,7 @@ from netCDF4 import Dataset
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 from cartopy import feature as cfeat
-np.set_printoptions(precision=20)
+#np.set_printoptions(precision=20)
     
 def point(matrix):
     '''
@@ -61,18 +61,16 @@ def percent(matrix, percent):
     '''
     maxval = []
     mask = np.zeros_like(matrix, dtype=bool)
-    matrix = np.abs(matrix.copy())
+    matrix = np.abs(matrix)
     for i in range(len(matrix[:,0,0])):
-        #lthreshval = np.percentile(matrix[i].compressed(), 100-percent/2.)
-        #uthreshval = np.percentile(matrix[i].compressed(), percent/2.)
         threshval = np.percentile(matrix[i].compressed(), percent)
-        #threshvals = np.hstack((lthreshval, uthreshval))
+        print("Sens Threshold: ", percent)
         print("Threshold value: ", threshval)
         # Item to be ignored in calculation if it's greater than lower percentile
         #  and less than the upper percentile
         mask[i] = (matrix[i] < threshval)
         #print(np.where(~mask))
-        maxval.append(np.ma.amax(matrix[i]))
+        maxval.append(np.ma.max(matrix[i]))
         print("Max values: ", maxval)
     return mask, maxval 
 
@@ -197,16 +195,15 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
             if method == 2:
                 #print("Max diff between mem and ob: ", np.ma.max(np.abs(mem_masked[:,:]-anlvar_masked[k,:,:])))
                 diff = mem_masked[:,:] - anlvar_masked[k,:,:]
-                diff_squared = np.square(diff)
-                error[k,i,:,:] = np.ma.abs(sens_masked[k,:,:])*diff_squared
+                error[k,i,:,:] = np.ma.abs(sens_masked[k,:,:]*diff)
                 #print("Max Error:", np.max(error[k,i,:,:]))
             else:
-                error[k,i,:,:] = (mem_masked[:,:]-anlvar_masked[k,:,:])**2
+                error[k,i,:,:] = np.abs(mem_masked[:,:]-anlvar_masked[k,:,:])
             # Restructure for later mask
             error[k,i][tmask[k]] = np.NaN
     # Mask all error data that was masked from member fields
     error_masked = np.ma.masked_array(error, mask=(error == np.NaN), fill_value=np.NaN)
-    print("Max weighted error: ", np.ma.max(error_masked))
+    print("Min/Max absolute weighted error: ", np.ma.min(error_masked), np.ma.max(error_masked))
     
     ####################################################
     # Test by plotting resulting sensitivity field
@@ -283,7 +280,7 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
     # Sum total error and choose members with least error for subset
     summed_error = np.zeros((fullensnum))
     for i in range(fullensnum): 
-        summed_error[i] = np.ma.sqrt(np.ma.sum(error_masked[:,i,:,:])/np.ma.size(error_masked[:,i,:,:]))
+        summed_error[i] = np.ma.sum(error_masked[:,i,:,:])/np.ma.size(error_masked[:,i,:,:])
     sorted_inds = summed_error.argsort()
     subset_mems = sorted_inds[:newensnum]+1 # Add one to correct zero-based
     print('Total errors: ', summed_error[sorted_inds])

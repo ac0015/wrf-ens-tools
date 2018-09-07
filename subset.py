@@ -208,7 +208,7 @@ class Subset:
         np.savetxt(S.getDir() + 'subset_members.txt', np.array(self._subset, dtype=int))
         return
     
-    def calcProbs(self, members, gridspacing=None):
+    def calcProbs(self, members):
         '''
         Runs the fortran executable calcprobSUBSET to calculate
         probabilities for any number of ensemble members. Takes
@@ -381,7 +381,7 @@ class Subset:
         wrfrefpath = S.getRefFileD2()
  
         research_plotting.plotProbs(path, wrfrefpath, 
-                                    S.getRbox(), S.getRTime(), outpath=direc)
+                                    S.getRbox(), S.getRTime(), self._nbr, outpath=direc)
         return
             
     def researchPlotDiffs(self, use_subset, verif_day=False):
@@ -439,7 +439,7 @@ class Subset:
         storePracPerf(S.getRunInit(), fhrs, pperfpath, sigma=sigma)
         return
     
-    def storeUHStats(self, outpath, pperfpath):
+    def storeUHStats(self, outpath, pperfpath, reliabilityobpath):
         '''
         Calculates and stores subset info along with
         six verification metrics, which are calculated
@@ -490,11 +490,11 @@ class Subset:
             sub_fss = FSS(subprobpath, pperfpath, rtimedate, var='updraft_helicity',
                       thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
             fens_reliability = Reliability(fensprobpath, S.getRunInit(), S.getRTime(),
-                                           obpath=None, var='updraft_helicity',
+                                           obpath=reliabilityobpath, var='updraft_helicity',
                                            thresh=self._thresh, rboxpath=S.getDir()+'esens.in',
                                            sixhr=False, nbrhd=self._nbr)
             sub_reliability = Reliability(subprobpath, S.getRunInit(), S.getRTime(),
-                                           obpath=None, var='updraft_helicity',
+                                           obpath=reliabilityobpath, var='updraft_helicity',
                                            thresh=self._thresh, rboxpath=S.getDir()+'esens.in',
                                            sixhr=False, nbrhd=self._nbr)
             # prob_bins and ob hit rate variables will stay the same, so OK to clobber

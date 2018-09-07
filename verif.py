@@ -7,20 +7,19 @@
 import matplotlib.pyplot as plt
 from netCDF4 import Dataset
 import numpy as np
+import os
 from os import chdir
 from datetime import datetime, timedelta
 from calc import FSS, Reliability
+from subset import Subset
 import matplotlib.gridspec as gridspec
 import matplotlib.cm as cm
+import nclcmaps
 
-ncfiles = ['../stats.nc']
-
-
-# In[2]:
-
-
-def storeEnsStats(ensprobpath, obpath, runinit, fhr, probvar='updraft_helicity', nbrhd=0., 
-                  subset=False, **subsetparms):
+def storeEnsStats(ensprobpath, obpath, reliabilityobpath,
+                  outpath, runinit, fhr, 
+                  probvar='updraft_helicity', probthresh=25., nbrhd=0., 
+                  subset=False, rboxpath=None, **subsetparms):
     '''
     Stores ensemble verification stats using FSS and Reliability
     calculations from calc.py. Currently only supports updraft
@@ -87,6 +86,7 @@ def storeEnsStats(ensprobpath, obpath, runinit, fhr, probvar='updraft_helicity',
     '''
     if subset:
         sub = Subset(**subsetparms)
+        sub.storeUHStats(outpath, obpath, reliabilityobpath)
     else:
         if os.path.exists(outpath):
             statsout = Dataset(outpath, 'a')
@@ -100,9 +100,8 @@ def storeEnsStats(ensprobpath, obpath, runinit, fhr, probvar='updraft_helicity',
             statsout.createVariable('Run_Init', str, ('Times'))
             statsout.createVariable('Neighborhood', float, ('Times'))
             statsout.createVariable('Full_Ens_Reliability_Total', float, ('Times', 'rel', 'bins'))
-            statsout.createVariable('Full_Ens_Reliability_Rbox', float, ('Times', 'rel', 'bins'))
             statsout.createVariable('Full_Ens_FSS_Total', float, ('Times'))
-            statsout.createVariable('Full_Ens_FSS_Rbox', float, ('Times'))
+
             ###########################################################
             # In non-subsetting terms, the response_func simply
             #   refers to the variable for which the probs are
@@ -143,14 +142,15 @@ def storeEnsStats(ensprobpath, obpath, runinit, fhr, probvar='updraft_helicity',
             rfunc = statsout.variables['Response_Func']
             resptime = statsout.variables['Response_Time']
             fensfsstot = statsout.variables['Full_Ens_FSS_Total']
+            nbr = statsout.variables['Neighborhood']
+            fens_rel_tot = statsout.variables['Full_Ens_Reliability_Total']
+            respthresh = statsout.variables['Response_Thresh']
+            pperfsig = statsout.variables['Prac_Perf_Sigma']
             n = len(init)
             init[n] = runinit
-            subsize[n] = subsize
-            submethod[n] = submethod
-            thresh[n] = sensthresh
             rfunc[n] = probvar
             resptime[n] = fhr
-            respthresh[n] = thresh
+            respthresh[n] = probthresh
             fensfsstot[n] = f_fss_tot
             pperfsig[n] = sig
             nbr[n] = nbrhd
@@ -158,22 +158,20 @@ def storeEnsStats(ensprobpath, obpath, runinit, fhr, probvar='updraft_helicity',
             statsout.close()
             return
 
-
-# In[3]:
-
-
 # Plot FSS against a variable from the netCDF file
 def plotUHFSS(ncfilepaths, xvarname,
               sigmas=[0,1,2], uhthresholds=[25., 40., 100.], nbrs=[30, 45, 60], 
               onlyplot=None, subset=False):
     '''
-    Plots FSS from a netCDF file containing 
+    Plots FSS from a netCDF file containing output either from the
+    storeEnsStats() function or the storeUHStats() from the subset
+    library.
     '''
     for sigma in sigmas:
         for uhthresh in uhthresholds:
             for nbr in nbrs:
                 figpath = "fss_by_{}_sig{}_uh{}_nbr{}.png".format(xvarname, sigma, uhthresh, nbr)
-                plt.figure(1, figsize=(10,10))
+                plt.figure(1, figsize=(12,10))
                 ncruns = []
                 for path in ncfilepaths:
                     print("NC File Path {}; Sigma {}; Neighborhood {}; UH Thresh {}".format(path, sigma, nbr, uhthresh))
@@ -184,7 +182,7 @@ def plotUHFSS(ncfilepaths, xvarname,
                     ncprobthresh = fssdat.variables['Response_Thresh'][:]
                     ncnbrhd = fssdat.variables['Neighborhood'][:]
                     # Find indices for particular combo of sigma, threshold, and neighborhood values
-                    inds = np.where((ncsig == sigma) & (ncprobthresh == uhthresh)                                     & (ncnbrhd == nbr))
+                    inds = np.where((ncsig == sigma) & (ncprobthresh == uhthresh) & (ncnbrhd == nbr))
                     # Run init
                     ncrun = fssdat.variables['Run_Init'][inds]
                     ncruns.append(ncrun)
@@ -213,11 +211,11 @@ def plotUHFSS(ncfilepaths, xvarname,
                         sensvars =  [list(x) for x in set(tuple(x) for x in ncsensvars)]
                         nvars = len(sensvars)
                         # Get color lists based on number of different sensitivity variables
-                        allcmap = cm.get_cmap('jet')
-                        rboxcmap = cm.get_cmap('prism')
-                        cmapincr = np.linspace(0, 1, nvars)
-                        totcolors = [allcmap(x) for x in cmapincr]
-                        rboxcolors = [rboxcmap(x) for x in cmapincr]
+                        allcmap = nclcmaps.cmap('grads_rainbow').colors
+                        rboxcmap = nclcmaps.cmap('grads_rainbow').colors
+                        cmapincr = np.linspace(0, len(allcmap)-1, nvars, dtype=int)
+                        totcolors = [allcmap[x] for x in cmapincr]
+                        rboxcolors = [rboxcmap[x] for x in cmapincr]
                         i = 0
                         for sensvar in sensvars:
                             if ('500_hPa_GPH' in sensvar) and ('SLP' in sensvar):
@@ -226,9 +224,9 @@ def plotUHFSS(ncfilepaths, xvarname,
                                 varlabel = ' '.join(var for var in sensvar)
                             # For legend label purposes
                             plt.plot(0, 0, color=totcolors[i], 
-                                     label="FSS Tot Domain with Sens Vars: {}".format(varlabel))
+                                     label="FSS Total Domain with Sensitivity Variables: {}".format(varlabel))
                             plt.plot(0, 0, color=rboxcolors[i],
-                                    label="FSS Rbox with Sens Vars: {}".format(varlabel))
+                                    label="FSS Response Box with Sensitivity Variables: {}".format(varlabel))
                             # Need to create mask here because shape of sensvars is different
                             #   from shape of other vars (can't broadcast together to create mask)
                             sens_mask = []
@@ -244,19 +242,21 @@ def plotUHFSS(ncfilepaths, xvarname,
                                     if xvarname == 'Subset_Size':
                                         # Means we can plot non-sensitivity-based subsets by subset size
                                         if (method == "percent") and (var == 0.):
-                                            totcolor = 'grey'
-                                            rboxcolor = 'black'
-                                            lw = 3
-                                            a = 0.9
+                                            #totcolor = 'grey'
+                                            #rboxcolor = 'black'
+                                            totcolor = totcolors[i]
+                                            rboxcolor = rboxcolors[i]
+                                            lw = 2
+                                            a = 0.5
                                         else:
                                             totcolor = totcolors[i]
                                             rboxcolor = rboxcolors[i]
-                                            lw = 1
+                                            lw = 2
                                             a = 0.5
                                     else:
                                         totcolor = totcolors[i]
                                         rboxcolor = rboxcolors[i]
-                                        lw = 1
+                                        lw = 2
                                         a = 0.5
                                     ### Done with color setting ######
                                     for stime in np.unique(ncsenstimes):
@@ -274,15 +274,18 @@ def plotUHFSS(ncfilepaths, xvarname,
                             i += 1
                         fssdat.close()
                         #print(np.unique(f_rbox_fss))
-                        plt.plot(x, np.ones_like(x)*np.unique(f_rbox_fss)[0], color='firebrick', 
-                                 linewidth=3, linestyle='--', label="Full Ens FSS Rbox")
+                        plt.grid()
+                        plt.plot(x, np.ones_like(x)*np.unique(f_rbox_fss)[0], color='maroon', 
+                                 linewidth=4, linestyle='--', label="Full Ensemble FSS Response Box")
                     #print(np.unique(f_tot_fss))
-                    plt.plot(x, np.ones_like(x)*np.unique(f_tot_fss)[0], color='navy',
-                            linewidth=3, linestyle='--', label="Full Ens FSS Tot Domain")
-                l = plt.legend(fontsize=5)
+                    plt.plot(x, np.ones_like(x)*np.unique(f_tot_fss)[0], color='midnightblue',
+                            linewidth=4, linestyle='--', label="Full Ensemble FSS Total Domain")
+                plt.xlabel(xvarname.replace('_',' '))
+                plt.ylabel('Fractional Skill Score')
+                l = plt.legend(fontsize=10, loc=9, bbox_to_anchor=(0.5,0.), borderaxespad=4.)
                 l.set_zorder = 12
                 plt.title(r"FSS for Runs Initiated {}".format(', '.join(str(run) for run in np.unique(ncruns[0][:]))) + '\n' +                           r"Practically Perfect $\sigma$ = {}; Neighborhood = {} km; UH Threshold = {} m$^2$/s$^2$".format(sigma, nbr, uhthresh))
-                plt.savefig(figpath)
+                plt.savefig(figpath, bbox_extra_artists=(l,), bbox_inches='tight')
                 plt.close()
     return
     
@@ -291,7 +294,7 @@ def plotUHFSS(ncfilepaths, xvarname,
 # In[6]:
 
 
-plotUHFSS(ncfilepaths=ncfiles, xvarname='Subset_Size', subset=True)
+#plotUHFSS(ncfilepaths=ncfiles, xvarname='Subset_Size', subset=True)
 
 
 # In[4]:
@@ -317,7 +320,7 @@ def plotReliability(statspath, subset=False):
         subrel = stats.variables['Subset_Reliability_Total'][:]
         bins, fcstfreqtmp, obhitratetmp = subrel[:,0], subrel[:,1], subrel[:,2]
         obhitrate = np.ma.masked_array(obhitratetmp, mask=9e9)
-        fcstfreq = np.ma.masked_array(obhitratetmp, mask=9e9)
+        fcstfreq = np.ma.masked_array(fcstfreqtmp, mask=9e9)
         probbins.append(bins)
         rel.append(obhitrate)
         colors.append('orange')
@@ -336,24 +339,9 @@ def plotReliability(statspath, subset=False):
         colors.append('navy')
     plt.figure()
     probbins, rel, binfreq = np.array(probbins[:]), np.array(rel[:]), np.array(binfreq)
-    subsizes = stats.variables['Subset_Size'][:]
     for i in range(len(rel)):
         for j in range(len(rel[1])):
-            print(subsizes[j], probbins[0,0,:]/100.*subsizes[j])
-            print(rel[i,j,:])
             plt.plot(probbins[0,0,:], rel[i,j,:], color=colors[i], alpha=0.5)
     plt.show()
     plt.close()
-
-
-# In[ ]:
-
-
-plotReliability('../stats.nc', subset=True)
-
-
-# In[ ]:
-
-
-print(Dataset('../stats_save.nc').variables['Subset_Size'][:])
 

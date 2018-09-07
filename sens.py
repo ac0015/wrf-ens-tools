@@ -279,7 +279,7 @@ class Sens:
                 
                 # Build path string
                 domain_strs = ['SENS', 'R']
-                d = 1
+                dom = 1
                 
                 # If restored, files have different naming conventions
                 if restored:
@@ -290,12 +290,14 @@ class Sens:
                                    '{}wrfout_d0{}_red_{}-{}-{}_{}:00:00']
                 for d in range(len(domain_strs)):
                     tmp = wrfout_strs[d].format(subdir, 
-                           str(d), str(current.year), mo, day, hr)
+                           str(dom), str(current.year), mo, day, hr)
                     new = '{}{}{}_{}.out'.format(subdir, domain_strs[d], str(i+1), str(t))
                     tmpexists, newexists = os.path.isfile(tmp), os.path.isfile(new)
                     if (tmpexists == True) and (newexists == False):
                         os.rename(tmp, new)
-                    d += 1
+                        print('Renaming {} to {}'.format(tmp, new))
+                        #print('yeet')
+                    dom += 1
         return
     
     def runMeanCalc(self):
