@@ -5,6 +5,7 @@ from cartopy import crs as ccrs
 from cartopy import feature as cfeat
 from matplotlib import pyplot as plt
 import matplotlib.patches as patches
+from scipy.ndimage.filters import gaussian_filter
 
 ##########################################################################
 # Script to plot ensemble sensitivity for all specified variables
@@ -103,6 +104,7 @@ smat_masked = np.ma.masked_array(data=smat, mask=smask)
 sens_max = np.zeros((len(sens_vars)))
 
 for i in range(len(sens_vars)):
+    print(sens_vars[i])
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal())
     rbox = patches.Rectangle((slon, slat), width, height, transform=ccrs.PlateCarree(), fill=False, color='green', linewidth=2., 
@@ -113,14 +115,16 @@ for i in range(len(sens_vars)):
     ax.add_feature(cfeat.BORDERS, edgecolor='dimgray')
     ax.add_feature(cfeat.COASTLINE, edgecolor='dimgray')
     ax.set_extent([lons[0,:].min(), lons[0,:].max(), lats[:,0].min(), lats[:,0].max()])
-    step = int((np.max(mmat_masked2[i,:,:]) - np.min(mmat_masked2[i,:,:]))*0.1)
+    step = int((np.max(mmat_masked2[i,:,:]) - np.min(mmat_masked2[i,:,:]))*0.15)
     if step == 0:
         step += 1
     clevels = np.arange(int(np.min(mmat_masked2[i,:,:])), int(np.max(mmat_masked2[i,:,:])), step)
     cflevels = np.linspace(-50., 50., 101)
-    sensmean = ax.contour(lons, lats, mmat_masked2[i,:,:], clevels, transform=ccrs.PlateCarree(), colors='black')
+    sensmean = ax.contour(lons, lats, gaussian_filter(mmat_masked2[i,:,:], 1), clevels, transform=ccrs.PlateCarree(), colors='black')
     esens = ax.contourf(lons, lats, smat_masked[i,:,:], cflevels, transform=ccrs.PlateCarree(), cmap='RdBu_r', 
                              alpha=0.7, extend='both', antialiased=True)
+    #p = ax.scatter(lons[187, 123], lats[187, 123], transform=ccrs.PlateCarree(), s=100., c='orange', zorder=12)
+    #print(smat_masked[i,187, 123])
     esens.cmap.set_under(color=u'navy')
     esens.cmap.set_over(color=u'darkred')
     ax.add_patch(rbox)

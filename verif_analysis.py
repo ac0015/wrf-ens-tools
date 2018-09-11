@@ -10,14 +10,17 @@ import numpy as np
 from os import chdir
 from datetime import datetime, timedelta
 
-ncfiles = ['/lustre/research/bancell/aucolema/HWT2016runs/2016051300/fssfinal.nc']
+ncfiles = ['/lustre/research/bancell/aucolema/HWT2016runs/2016051000/stats.nc',
+           '/lustre/research/bancell/aucolema/HWT2016runs/2016051300/fssfinal.nc']
 
 # Plot FSS for subset size/pperf sigma
 fullensnum = 42
-sigma = 2
+sigma = 1
 figpath = 'fss_scatter_sigma{}.png'.format(sigma)
 a = 0.3
+runs = []
 plt.figure(1, figsize=(10,10))
+n = 0
 for file in ncfiles:
     dat = Dataset(file)
     sig = dat.variables['Prac_Perf_Sigma'][:]
@@ -29,6 +32,7 @@ for file in ncfiles:
     fullens_fss_all = dat.variables['Full_Ens_FSS_Total'][inds]
     fullens_fss_rbox = dat.variables['Full_Ens_FSS_Rbox'][inds]
     init = dat.variables['Run_Init'][inds]
+    runs.append(str(init[0]))
     sub_full_mean = []
     sub_rbox_mean = []
     for size in np.unique(subsize[subsize<fullensnum]):
@@ -36,19 +40,28 @@ for file in ncfiles:
         sub_full_mean.append(np.mean(fss_all[sub_inds]))
         sub_rbox_mean.append(np.mean(fss_rbox[sub_inds]))
     sub_full_mean, sub_rbox_mean = np.array(sub_full_mean), np.array(sub_rbox_mean)
+    if n > 0:
+        totlabel = None
+        rboxlabel = None
+    else:
+        totlabel = 'Total Domain FSS'
+        rboxlabel = 'Response Box FSS'
     plt.scatter(subsize[subsize<fullensnum], fss_all[subsize<fullensnum], c='lightgreen', edgecolor='k', alpha=a,
-            label='Total Domain FSS')
-    plt.scatter(np.unique(subsize[subsize<fullensnum]), sub_full_mean,
-            c='firebrick', edgecolor='k', s=60., alpha=1, label="Total Domain Mean FSS")
+            label=totlabel)
+#    plt.scatter(np.unique(subsize[subsize<fullensnum]), sub_full_mean,
+#            c='firebrick', edgecolor='k', s=60., alpha=1, label="Total Domain Mean FSS", zorder=13)
     plt.scatter(fullensnum*np.ones_like(subsize), fullens_fss_all, alpha=a, c='lightgreen', edgecolor='k')
     plt.scatter(subsize[subsize<fullensnum], np.array(fss_rbox[subsize<fullensnum]), c='purple', edgecolor='k', alpha=a,
-            label='Response Box FSS')
-    plt.scatter(np.unique(subsize[subsize<fullensnum]), sub_rbox_mean,
-            c='yellow', edgecolor='k', s=60., alpha=1, label="Response Box Mean FSS")
+            label=rboxlabel)
+#    plt.scatter(np.unique(subsize[subsize<fullensnum]), sub_rbox_mean,
+#            c='yellow', edgecolor='k', s=60., alpha=1, label="Response Box Mean FSS", zorder=13)
 
     plt.scatter(fullensnum*np.ones_like(subsize), np.array(fullens_fss_rbox), alpha=a, c='purple', edgecolor='k')
+    n += 1
 plt.legend()
-plt.title(r'Fractional Skill Scores of Subsets from {} UTC run valid f{} with $\sigma$ = {}'.format(str(init[0]), str(rtime[0]), str(sigma)))
+print(runs)
+plt.title(r'Fractional Skill Scores of Subsets from {} UTC run(s) with $\sigma$ = {}'.format(', '.join(str(i) for i in runs), 
+          str(sigma)))
 plt.xlabel('Subset Size')
 plt.ylabel('FSS')
 plt.grid()

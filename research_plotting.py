@@ -34,6 +34,7 @@ import scipy as sp
 from matplotlib.colors import LinearSegmentedColormap
 from scipy import ndimage
 from subprocess import call
+import cmocean
 
 ########################################################
 # Slice information
@@ -277,10 +278,11 @@ def plotPracPerf(runinitdate, sixhr, rtime, sigma=2, outpath='pperf.png'):
     ax.add_feature(state_borders, linestyle="-", edgecolor='dimgray')
     ax.add_feature(cfeat.BORDERS, edgecolor='dimgray')
     ax.add_feature(cfeat.COASTLINE, edgecolor='dimgray')
-    cflevels = np.arange(np.min(pperf)*100., np.max(pperf)*100.+1)
-    cs = ax.contour(lons, lats, pperf*100., cflevels,cmap='jet', transform=ccrs.PlateCarree())
+    cflevels = np.arange(1, 101, 1)
+    cf = ax.contourf(lons, lats, pperf*100., cflevels, transform=ccrs.PlateCarree(),
+                     cmap='viridis')
     #plt.clabel(cs)
-    plt.colorbar(cs, ax=ax)
+    plt.colorbar(cf, ax=ax)
     plt.title('Practically Perfect valid: ' + str(time-timedelta(hours=1)) + ' to ' + str(time))
     plt.savefig(outpath)
     return

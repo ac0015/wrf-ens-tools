@@ -267,6 +267,21 @@ def plotUHFSS(ncfilepaths, xvarname,
                                             subinds = np.where((ncmethod[sens_mask] == method) & (ncyvar[sens_mask] == var) &                                                               (ncanalysis[sens_mask] == analysis) & (ncsenstimes[sens_mask] == stime))
                                             y_tot_domain = sub_fss_all_tmp[subinds]
                                             y_rbox = sub_fss_rbox_tmp[subinds]
+                                            # Careful with this if-statement
+                                            # Only use when you know zeroes are
+                                            #  due to probcalc.f bug and not
+                                            #  actual zero FSS values. Otherwise
+                                            #  leave commented out.
+                                            if (uhthresh < 100) & (xvarname == 'Subset_Size'):
+                                                totmask = (xtmp[subinds] > 4) & (y_tot_domain < 0.001)
+                                                rboxmask = (xtmp[subinds] > 4) & (y_rbox < 0.001)
+                                                y_tot_domain = np.ma.masked_array(y_tot_domain, mask=totmask)
+                                                y_rbox = np.ma.masked_array(y_rbox, mask=rboxmask)
+                                            elif (xvarname == 'Subset_Size'):
+                                                totmask = (xtmp[subinds] > 6) & (y_tot_domain < 0.001)
+                                                rboxmask = (xtmp[subinds] > 6) & (y_rbox < 0.001)
+                                                y_tot_domain = np.ma.masked_array(y_tot_domain, mask=totmask)
+                                                y_rbox = np.ma.masked_array(y_rbox, mask=rboxmask)
                                             #print(method, var, analysis, stime, y_tot_domain, y_rbox)
                                             #print(xtmp[subinds])
                                             plt.plot(xtmp[subinds], y_tot_domain, color=totcolor, lw=lw, alpha=a)
@@ -282,6 +297,7 @@ def plotUHFSS(ncfilepaths, xvarname,
                             linewidth=4, linestyle='--', label="Full Ensemble FSS Total Domain")
                 plt.xlabel(xvarname.replace('_',' '))
                 plt.ylabel('Fractional Skill Score')
+                plt.ylim(0, 1)
                 l = plt.legend(fontsize=10, loc=9, bbox_to_anchor=(0.5,0.), borderaxespad=4.)
                 l.set_zorder = 12
                 plt.title(r"FSS for Runs Initiated {}".format(', '.join(str(run) for run in np.unique(ncruns[0][:]))) + '\n' +                           r"Practically Perfect $\sigma$ = {}; Neighborhood = {} km; UH Threshold = {} m$^2$/s$^2$".format(sigma, nbr, uhthresh))
@@ -300,48 +316,51 @@ def plotUHFSS(ncfilepaths, xvarname,
 # In[4]:
 
 
-def plotReliability(statspath, subset=False):
+def plotReliability(statspaths, outpath, subset=False):
     '''
     Plot reliability diagrams.
     '''
-    stats = Dataset(statspath)
-    print(stats)
-    probbins = []
-    rel = []
-    colors = []
-    binfreq = []
-    fensrel = stats.variables['Full_Ens_Reliability_Total'][:]
-    bins, fcstfreq, obhitrate = fensrel[:,0], fensrel[:,1], fensrel[:,2]
-    probbins.append(bins)
-    rel.append(obhitrate)
-    colors.append('blue')
-    binfreq.append(fcstfreq)
-    if subset:
-        subrel = stats.variables['Subset_Reliability_Total'][:]
-        bins, fcstfreqtmp, obhitratetmp = subrel[:,0], subrel[:,1], subrel[:,2]
-        obhitrate = np.ma.masked_array(obhitratetmp, mask=9e9)
-        fcstfreq = np.ma.masked_array(fcstfreqtmp, mask=9e9)
-        probbins.append(bins)
-        rel.append(obhitrate)
-        colors.append('orange')
-        binfreq.append(fcstfreq)
-        subrelrbox = stats.variables['Subset_Reliability_Rbox'][:]
-        bins, fcstfreq, obhitrate = subrelrbox[:,0], subrelrbox[:,1], subrelrbox[:,2]
-        probbins.append(bins)
-        rel.append(obhitrate)
-        binfreq.append(fcstfreq)
-        colors.append('firebrick')
-        fensrelrbox = stats.variables['Full_Ens_Reliability_Rbox'][:]
-        bins, fcstfreq, obhitrate = fensrelrbox[:,0], fensrelrbox[:,1], fensrelrbox[:,2]
-        probbins.append(bins)
-        rel.append(obhitrate)
-        binfreq.append(fcstfreq)
-        colors.append('navy')
     plt.figure()
-    probbins, rel, binfreq = np.array(probbins[:]), np.array(rel[:]), np.array(binfreq)
-    for i in range(len(rel)):
-        for j in range(len(rel[1])):
-            plt.plot(probbins[0,0,:], rel[i,j,:], color=colors[i], alpha=0.5)
-    plt.show()
+    for path in statspaths:
+        stats = Dataset(path)
+        print(stats)
+        probbins = []
+        rel = []
+        colors = []
+        binfreq = []
+        fensrel = stats.variables['Full_Ens_Reliability_Total'][:]
+        bins, fcstfreq, obhitrate = fensrel[:,0], fensrel[:,1], fensrel[:,2]
+        probbins.append(bins)
+        rel.append(obhitrate)
+        colors.append('blue')
+        binfreq.append(fcstfreq)
+        if subset:
+            subrel = stats.variables['Subset_Reliability_Total'][:]
+            bins, fcstfreqtmp, obhitratetmp = subrel[:,0], subrel[:,1], subrel[:,2]
+            obhitrate = np.ma.masked_array(obhitratetmp, mask=9e9)
+            fcstfreq = np.ma.masked_array(fcstfreqtmp, mask=9e9)
+            probbins.append(bins)
+            rel.append(obhitrate)
+            colors.append('orange')
+            binfreq.append(fcstfreq)
+            subrelrbox = stats.variables['Subset_Reliability_Rbox'][:]
+            bins, fcstfreq, obhitrate = subrelrbox[:,0], subrelrbox[:,1], subrelrbox[:,2]
+            probbins.append(bins)
+            rel.append(obhitrate)
+            binfreq.append(fcstfreq)
+            colors.append('firebrick')
+            fensrelrbox = stats.variables['Full_Ens_Reliability_Rbox'][:]
+            bins, fcstfreq, obhitrate = fensrelrbox[:,0], fensrelrbox[:,1], fensrelrbox[:,2]
+            probbins.append(bins)
+            rel.append(obhitrate)
+            binfreq.append(fcstfreq)
+            colors.append('navy')
+        probbins, rel, binfreq = np.array(probbins[:]), np.array(rel[:]), np.array(binfreq)
+        mask = (rel == 9e9)
+        rel = np.ma.masked_array(rel, mask=mask)
+        for i in range(len(rel)):
+            for j in range(len(rel[0,:,0])):
+                plt.plot(probbins[0,0,:], rel[i,j,:], color=colors[i], alpha=0.5)
+    plt.savefig(outpath)
     plt.close()
 

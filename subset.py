@@ -291,7 +291,7 @@ class Subset:
         # Run fortran executable
         # TO-DO: figure out why this throws a 'not netCDF error'
         # Doesn't throw this error when probcalcis executed directly
-        args = "/lustre/work/aucolema/enkfDART/src/probcalc <{} >probs.out".format(fname)
+        args = "/lustre/work/aucolema/enkfDART/src/probcalcSUBSET <{} >probs.out".format(fname)
         try:
             subprocess_cmd(args)
         except OSError:
