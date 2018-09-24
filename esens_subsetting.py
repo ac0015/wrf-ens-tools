@@ -48,10 +48,13 @@ def point(matrix):
     Builds a mask that is true for a matrix everywhere 
     except the highest value point in the matrix.
     '''
-    matrix = np.absolute(matrix)
-    maxval = np.max(matrix)
-    point = np.where(matrix == maxval)
-    mask = (matrix != matrix[point])
+    maxval = []
+    mask = np.zeros_like(matrix, dtype=bool)
+    matrix = np.abs(matrix)
+    for i in range(len(matrix[:,0,0])):
+        maxval.append(np.ma.max(matrix))
+        point = np.where(matrix == maxval)
+        mask[i] = (matrix != matrix[point])
     return mask, maxval
 
 def percent(matrix, percent):
@@ -63,6 +66,7 @@ def percent(matrix, percent):
     mask = np.zeros_like(matrix, dtype=bool)
     matrix = np.abs(matrix)
     for i in range(len(matrix[:,0,0])):
+        print(np.max(matrix[i]))
         threshval = np.percentile(matrix[i].compressed(), percent)
         print("Sens Threshold: ", percent)
         print("Threshold value: ", threshval)
@@ -70,7 +74,7 @@ def percent(matrix, percent):
         #  and less than the upper percentile
         mask[i] = (matrix[i] < threshval)
         #print(np.where(~mask))
-        maxval.append(np.ma.max(matrix[i]))
+        maxval.append(np.max(matrix[i]))
         print("Max values: ", maxval)
     return mask, maxval 
 
@@ -123,12 +127,18 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
     wrfsens = Dataset(wrfsensfile)
     smat = wrfsens.variables['P_HYD']    
     lons, lats = wrfsens.variables['XLONG'][0], wrfsens.variables['XLAT'][0] 
-    # Will need to implement for loop when testing more than one sens var
     sensmat = smat[0,sensinds[:],:,:]
     # Mask of underground and missing data
     missing = (sensmat >= 9e9)
-    sensmat_masked = np.ma.masked_array(sensmat, mask=missing)
     #print("Max sens: ", np.ma.amax(sensmat_masked))
+    # Pull analysis
+    anl = Dataset(analysis)
+    anlvar = np.ma.zeros((len(sensvars), len(lats[:,0]), len(lons[0,:])))
+    for i in range(len(sensvars)):
+        anlvar[i,:,:] = anl.variables[sensvars[i]][:,:]
+    anl_missing = (anlvar >= 9e9)
+    sensstrings = [sensvar.replace("_"," ") for sensvar in sensvars.copy()]
+    sensmat_masked = np.ma.masked_array(sensmat, mask=(missing))
     
     try:
         print("Subset Method: ",str(method))
@@ -155,14 +165,6 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
 #              np.ma.min(sens_masked[i]))
 #    #print(sensmat_masked[~sensmat_masked.mask])
 #    #print(sens_masked[~sens_masked.mask])
-     
-    # Pull analysis
-    anl = Dataset(analysis)
-    anlvar = np.ma.zeros((len(sensvars), len(lats[:,0]), len(lons[0,:])))
-    for i in range(len(sensvars)):
-        anlvar[i,:,:] = anl.variables[sensvars[i]][:,:]
-    anl_missing = (anlvar >= 9e9)
-    sensstrings = [sensvar.replace("_"," ") for sensvar in sensvars.copy()]
     
     # New naming conventions for sens netcdf
     varkeydict = {0: 'GPH_300', 1: 'GPH_500', 2: 'GPH_700', 3: 'GPH_850', 
@@ -188,7 +190,7 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
     sens_masked = np.ma.masked_array(sensmat_masked, mask=tmask)
     for k in range(len(varkeys)):
         print("Min sensitivity val for sens var {}: ".format(sensvars[k]), np.ma.min(np.abs(sens_masked[k])))
-        print("Max sensitivity val for sens var {}: ".format(sensvars[k]), np.ma.max(sens_masked[k]))
+        print("Max sensitivity val for sens var {}: ".format(sensvars[k]), np.ma.max(np.abs(sens_masked[k])))
         for i in range(fullensnum):
             # Apply percent sensfield and missing masks to member
             mem_masked = np.ma.masked_array(memvar[k,i], mask=(tmask[k]))
@@ -203,7 +205,7 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
             error[k,i][tmask[k]] = np.NaN
     # Mask all error data that was masked from member fields
     error_masked = np.ma.masked_array(error, mask=(error == np.NaN), fill_value=np.NaN)
-    print("Min/Max absolute weighted error: ", np.ma.min(error_masked), np.ma.max(error_masked))
+    print("Min/Max absolute weighted error: ", np.nanmin(error_masked), np.nanmax(error_masked))
     
     ####################################################
     # Test by plotting resulting sensitivity field
@@ -280,7 +282,7 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
     # Sum total error and choose members with least error for subset
     summed_error = np.zeros((fullensnum))
     for i in range(fullensnum): 
-        summed_error[i] = np.ma.sum(error_masked[:,i,:,:])/np.ma.size(error_masked[:,i,:,:])
+        summed_error[i] = np.nansum(error_masked[:,i,:,:])/np.ma.size(error_masked[:,i,:,:])
     sorted_inds = summed_error.argsort()
     subset_mems = sorted_inds[:newensnum]+1 # Add one to correct zero-based
     print('Total errors: ', summed_error[sorted_inds])

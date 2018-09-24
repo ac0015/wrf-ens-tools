@@ -18,8 +18,8 @@ date = str(sys.argv[2])
 yr, mo, day, hr = int(date[:4]), int(date[4:6]), int(date[6:8]), int(date[8:])
 print(yr, mo, day, hr)
 init = datetime(yr, mo, day, hr)
-sens_times = [6, 12]
-subset_sizes = [1, 2, 4, 6, 10, 15, 20, 25, 30, 35, 40]
+sens_times = [12]
+subset_sizes = [25, 30, 35, 40]
 subset_methods = ['weight', 'percent']
 # Each sig level and then all sens vars
 sensvars = [['300_hPa_GPH', '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind'], 
@@ -56,13 +56,15 @@ for senstime in sens_times:
     S = Sens(infile=True, gui=True, run=init, 
              senstime=senstime)
     print('Using sens obj:', str(S))
-    S.runAll()
+    #S.runAll()
     # Calculate Full Ensemble probs and Practically Perfect probs
     rtime = S.getRTime()
     rdate = init + timedelta(hours=rtime)
     pperfpaths = []
     for sig in sigma:
         outpath = direc + 'sigma{}_pperf.nc'.format(sig)
+        if os.path.exists(outpath):
+           os.popen('rm {}'.format(outpath))
         pperfpaths.append(outpath)
         post.storePracPerf(init, [rtime], 
                            outpath, sigma=sig)
@@ -70,6 +72,8 @@ for senstime in sens_times:
         sub = Subset(S, nbrhd=nbr)
         sub.calcProbs(sub._fullens)
         outpath = direc + 'reliability_ob_nbr{}.nc'.format(int(nbr))
+        if os.path.exists(outpath):
+           os.popen('rm {}'.format(outpath))
         post.storeNearestNeighbor(init, [rtime], 
                                   outpath, nbrhd=nbr)
     sub.interpRAP()

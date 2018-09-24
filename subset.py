@@ -381,10 +381,11 @@ class Subset:
         wrfrefpath = S.getRefFileD2()
  
         research_plotting.plotProbs(path, wrfrefpath, 
-                                    S.getRbox(), S.getRTime(), self._nbr, outpath=direc)
+                                    S.getRbox(), S.getRTime(), self._nbr, outpath=direc,
+                                    subset=use_subset)
         return
             
-    def researchPlotDiffs(self, use_subset, verif_day=False):
+    def researchPlotDiffs(self, verif_day=False):
         '''
         Calculates and plots delta probabilities between the 1-hr full ensemble
         probs and its corresponding 1-hr subset probs. Calls plotDiff from 
@@ -397,16 +398,12 @@ class Subset:
         fullenspath = direc + self._fensprob
         subsetpath = direc + self._subprob
         wrfrefpath = S.getRefFileD2()
-        if use_subset:
-            path = subsetpath
-        else:
-            path = fullenspath
         
         # Format date for storm reports
         date = S.getRunInit()
         SPCdate = str(date)[2:10].replace('-','')
         
-        research_plotting.plotDiff(path, wrfrefpath,
+        research_plotting.plotDiff(fullenspath, subsetpath, wrfrefpath,
                                    S.getRbox(), S.getRTime(), SPCdate,
                                    stormreports=verif_day)
         return
@@ -414,9 +411,6 @@ class Subset:
     def plotSixPanels(self, storm_reports=True):
         S = self.getSens()
         # Make sure subset has already been calculated
-        if self._subset == None:
-            print("Identifying subset members for current Subset object...")
-            self.calcSubset()
         yr, mo, day, hr = fromDatetime(S.getRunInit(), interp=False)
         rfunclabel = S.getRString().replace(' ','').lower()
         dirdate = str(yr) + str(mo) + str(day) + str(hr)

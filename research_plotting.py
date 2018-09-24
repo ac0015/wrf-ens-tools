@@ -35,6 +35,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from scipy import ndimage
 from subprocess import call
 import cmocean
+from scipy.ndimage.filters import gaussian_filter
 
 ########################################################
 # Slice information
@@ -216,7 +217,7 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     #Remove report CSV file
     os.remove(rptfile)    
     
-    return pperf, wrflon, wrflat
+    return pperf, wrflon, wrflat, np.array(lons)[mask], np.array(lats)[mask]
  
 
 ################################################################################################
@@ -266,10 +267,9 @@ def plotPracPerf(runinitdate, sixhr, rtime, sigma=2, outpath='pperf.png'):
     -------
     returns NULL and saves plot to outpath
     '''
-    pperf, lons, lats = calc_prac_perf(runinitdate, sixhr, rtime, sigma=sigma)
+    pperf, lons, lats, rlons, rlats = calc_prac_perf(runinitdate, sixhr, rtime, sigma=sigma)
     time = runinitdate + timedelta(hours=rtime)
     fig = plt.figure(figsize=(10, 10))
-    print(np.min(pperf), np.max(pperf))
     # Build map
     ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal())
     ax.set_extent([-108., -85., 28., 45.])
@@ -281,13 +281,16 @@ def plotPracPerf(runinitdate, sixhr, rtime, sigma=2, outpath='pperf.png'):
     cflevels = np.arange(1, 101, 1)
     cf = ax.contourf(lons, lats, pperf*100., cflevels, transform=ccrs.PlateCarree(),
                      cmap='viridis')
+    ax.scatter(rlons, rlats, transform=ccrs.PlateCarree(),
+               c='orange', edgecolor='k', alpha=0.8, zorder=10, label='SPC Reports')
     #plt.clabel(cs)
-    plt.colorbar(cf, ax=ax)
+    plt.legend()
+    plt.colorbar(cf, ax=ax, fraction=0.039, pad=0.01, orientation='vertical', label='Probability')
     plt.title('Practically Perfect valid: ' + str(time-timedelta(hours=1)) + ' to ' + str(time))
     plt.savefig(outpath)
     return
 
-def plotProbs(probpath, wrfrefpath, rbox, time, nbrhd, outpath=''):
+def plotProbs(probpath, wrfrefpath, rbox, time, nbrhd, outpath='', subset=False):
     '''
     Plots 1-hr probabilities for a specified time for each response
     function (fullens and subset) and overlays the response 
@@ -310,11 +313,11 @@ def plotProbs(probpath, wrfrefpath, rbox, time, nbrhd, outpath=''):
     # Get prob data
     probdat = Dataset(probpath)
     probs = probdat.variables['P_HYD'][0]
-    refl40fullens = probs[0]
-    uh25fullens = probs[1]
-    uh40fullens = probs[2]
-    uh100fullens = probs[3]
-    problist = [refl40fullens, uh25fullens, uh40fullens, uh100fullens]
+    refl40 = probs[0]
+    uh25 = probs[1]
+    uh40= probs[2]
+    uh100 = probs[3]
+    problist = [refl40, uh25, uh40, uh100]
     
     # Get lat/lon data
     wrfref = Dataset(wrfrefpath)
@@ -330,7 +333,11 @@ def plotProbs(probpath, wrfrefpath, rbox, time, nbrhd, outpath=''):
     # Label Strings
     rstrs = ['Reflectivity > 40 dBZ', r'UH > 25 m$^2$/s$^2$', 
              r'UH > 40 m$^2$/s$^2$', r'UH > 100 m$^2$/s$^2$'] 
-    figstrs = ['refl40fullens', 'uhmax25fullens', 'uhmax40fullens',
+    if subset:
+        figstrs = ['refl40subset', 'uhmax25subset', 'uhmax40subset',
+               'uhmax100subset']
+    else:
+        figstrs = ['refl40fullens', 'uhmax25fullens', 'uhmax40fullens',
                'uhmax100fullens']
 
     for i in range(len(figstrs)):
@@ -351,7 +358,7 @@ def plotProbs(probpath, wrfrefpath, rbox, time, nbrhd, outpath=''):
         ax.set_extent([llon-10.0, ulon+10.0, llat-5.0, ulat+5.0])
         # Plot probs        
         cflevels = np.linspace(0., 100., 21)
-        prob = ax.contourf(lons, lats, problist[i], cflevels, transform=ccrs.PlateCarree(), 
+        prob = ax.contourf(lons, lats, gaussian_filter(problist[i], 1), cflevels, transform=ccrs.PlateCarree(), 
                            cmap=nclcmaps.cmap('precip3_16lev'), alpha=0.7, antialiased=True)
         fig.colorbar(prob, fraction=0.046, pad=0.04, orientation='horizontal', label='Probability (Percent)')
         # Format titles and figure names
@@ -361,8 +368,8 @@ def plotProbs(probpath, wrfrefpath, rbox, time, nbrhd, outpath=''):
         plt.close()
     return
         
-def plotDiff(probpath, wrfrefpath, rbox, time,
-             responsedate, stormreports=False):
+def plotDiff(fensprobpath, subprobpath, wrfrefpath, rbox, time,
+             responsedate, stormreports=False, outpath=''):
     '''
     Method that plots the difference in 1-hr probabilities between full
     ensemble and subsets for each response function at a specific
@@ -384,22 +391,20 @@ def plotDiff(probpath, wrfrefpath, rbox, time,
                         reports for the day.
     '''    
     # Get prob data
-    probdat = Dataset(probpath)
-    probs = probdat.variables['P_HYD'][0]
-    slpmean = probs[0]/100.
-    u10mean = probs[1]
-    v10mean = probs[2]
-    refl40fullens = probs[3]
-    uh25fullens = probs[4]
-    refl40subuhmax = probs[7]
-    uh25subuhmax = probs[8]
-    refl40subdbzcov = probs[11]
-    uh25subdbzcov = probs[12]
-    refl40subuhcov = probs[15]
-    uh25subuhcov = probs[16]
-    fullensprob = [refl40fullens, uh25fullens]
-    subsetprob = [refl40subuhmax, uh25subuhmax, refl40subdbzcov, uh25subdbzcov, 
-                  refl40subuhcov, uh25subuhcov]
+    fensprobdat = Dataset(fensprobpath)
+    fensprobs = fensprobdat.variables['P_HYD'][0]
+    refl40full = fensprobs[0]
+    uh25full = fensprobs[1]
+    uh40full = fensprobs[2]
+    uh100full = fensprobs[3]
+    subprobdat = Dataset(subprobpath)
+    subprobs = subprobdat.variables['P_HYD'][0]
+    refl40sub = subprobs[0]
+    uh25sub = subprobs[1]
+    uh40sub = subprobs[2]
+    uh100sub = subprobs[3]
+    fullensprob = [refl40full, uh25full, uh40full, uh100full]
+    subsetprob = [refl40sub, uh25sub, uh40sub, uh100sub]
     
     # Get lat/lon data
     wrfref = Dataset(wrfrefpath)
@@ -415,9 +420,8 @@ def plotDiff(probpath, wrfrefpath, rbox, time,
     # Specific to fotran program probcalcSUBSETnew. Change if fortran
     #  code changes.
     rstrs = ['Reflectivity > 40 dBZ', r'UH > 25 m$^2$/s$^2$', 
-             r'UH > 100 m$^2$/s$^2$', 'Wind Speed > 40 mph'] 
-    figstrs = ['refl40subuhmax', 'uhmax25subuhmax', 'refl40subdbzcov', 
-               'uhmax25subdbzcov', 'refl40subuhcov', 'uhmax25subuhcov']
+             r'UH > 40 m$^2$/s$^2$', r'UH > 100 m$^2$/s$^2$'] 
+    figstrs = ['refl40sub', 'uhmax25sub', 'uhmax40sub', 'uhmax100sub']
     
     # Pull storm reports if needed.
     if stormreports:
@@ -448,25 +452,20 @@ def plotDiff(probpath, wrfrefpath, rbox, time,
                              fill=False, color='green', linewidth=2., zorder=3.)
         ax.add_patch(rbox)
         ax.set_extent([llon-10.0, ulon+10.0, llat-5.0, ulat+5.0])
-        # Set clevels for means
-        slplev = np.arange(970, 1043, 4)
-        # Plot means
-        slp = ax.contour(lons, lats, slpmean, slplev, colors='k', transform=ccrs.PlateCarree())
-        ax.barbs(lons[::25,::25], lats[::25,::25], 
-                          u10mean[::25,::25], v10mean[::25,::25], length=5, 
-                          linewidth=0.5, transform=ccrs.PlateCarree())
-        plt.clabel(slp)
+
         # Set plot difference levels
-        cflevels = np.linspace(-80., 80., 33)
-        prob = ax.contourf(lons, lats, (subsetprob[i] - fullensprob[i%2]), cflevels, transform=ccrs.PlateCarree(), 
-                           cmap=nclcmaps.cmap('ViBlGrWhYeOrRe'),alpha=0.7, antialiased=True)
+        cflevels = np.linspace(-80., 80., 161)
+        prob = ax.contourf(lons, lats, gaussian_filter(subsetprob[i] - fullensprob[i], 1), cflevels, transform=ccrs.PlateCarree(), 
+                           cmap=nclcmaps.cmap('BlWhRe'),alpha=1, antialiased=True)
         if stormreports:
-            ax.scatter(np.array(tlons, dtype=float), np.array(tlats, dtype=float), transform=ccrs.PlateCarree(), c='red', edgecolor='k', label='Tor Report', alpha=0.3)
-            ax.scatter(np.array(hlons, dtype=float), np.array(hlats, dtype=float), transform=ccrs.PlateCarree(), c='green', edgecolor='k', label='Hail Report', alpha=0.3)
+            ax.scatter(np.array(tlons, dtype=float), np.array(tlats, dtype=float),
+                       transform=ccrs.PlateCarree(), c='red', edgecolor='k', label='Tor Report', alpha=0.6)
+            ax.scatter(np.array(hlons, dtype=float), np.array(hlats, dtype=float), 
+                       transform=ccrs.PlateCarree(), c='green', edgecolor='k', label='Hail Report', alpha=0.6)
             plt.legend()
         fig.colorbar(prob, fraction=0.046, pad=0.04, orientation='horizontal', label='Percent Difference')
-        ax.set_title(r'Probability difference (Subset - Full Ensemble) of {} at f{}'.format(rstrs[i%2], str(time)))
-        plt.savefig("{}probdiff_f{}".format(figstrs[i], str(time)))
+        ax.set_title(r'Probability difference (Subset - Full Ensemble) of {} at f{}'.format(rstrs[i], str(time)))
+        plt.savefig("{}{}probdiff_f{}".format(outpath,figstrs[i], str(time)))
         plt.close()
     return
 
@@ -781,7 +780,8 @@ def plotHrlySPC(outputdir, runinit, rbox, numtimes, wrfrefpath):
             # Add tor/hail pts
             if (len(torlons[tmask]) > 0):
                 ax.scatter(np.array(torlons[tmask], dtype=float), np.array(torlats[tmask], dtype=float), 
-                           transform=ccrs.PlateCarree(), c='red', edgecolor='k', label='Tor Report', alpha=0.7)
+                           transform=ccrs.PlateCarree(), c='red', edgecolor='k', label='Tor Report', alpha=0.7,
+                           zorder=12)
             if (len(hlons[hmask]) > 0):
                 ax.scatter(np.array(hlons[hmask], dtype=float), np.array(hlats[hmask], dtype=float), 
                            transform=ccrs.PlateCarree(), c='green', edgecolor='k', label='Hail Report', alpha=0.7)

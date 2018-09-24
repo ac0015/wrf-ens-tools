@@ -58,7 +58,8 @@ c$$$ Read in neighborhood in km
       read*,nbr
 c$$$ Read outfilepath name
       read*,outfilemean
-
+      
+      print*, nbr
       ensnummax=50
       ensnum=ecnt
       iunitread=10
