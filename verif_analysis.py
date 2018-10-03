@@ -10,13 +10,13 @@ import numpy as np
 from os import chdir
 from datetime import datetime, timedelta
 
-ncfiles = ['/lustre/research/bancell/aucolema/HWT2016runs/2016051000/stats.nc',
-           '/lustre/research/bancell/aucolema/HWT2016runs/2016051300/fssfinal.nc']
+ncfiles = ['/lustre/research/bancell/aucolema/HWT2016runs/2016051000/stats.nc']
 
 # Plot FSS for subset size/pperf sigma
 fullensnum = 42
 sigma = 1
-figpath = 'fss_scatter_sigma{}.png'.format(sigma)
+stime = 6
+figpath = 'fss_scatter_sigma{}_stime{}.png'.format(sigma, stime)
 a = 0.3
 runs = []
 plt.figure(1, figsize=(10,10))
@@ -24,7 +24,8 @@ n = 0
 for file in ncfiles:
     dat = Dataset(file)
     sig = dat.variables['Prac_Perf_Sigma'][:]
-    inds = np.where(sig == sigma)
+    senstime = dat.variables['Sens_Time'][:]
+    inds = np.where((sig == sigma) & (senstime == stime))
     rtime = dat.variables['Response_Time'][inds]
     subsize = dat.variables['Subset_Size'][inds]       
     fss_all = dat.variables['Subset_FSS_Total'][inds]

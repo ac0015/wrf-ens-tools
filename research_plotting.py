@@ -996,7 +996,7 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
     height = ulat - llat
     
     # Get subset members
-    memslist = [submems, submems, submems, submems]
+    memslist = [submems, submems, submems, submems, submems]
 
     # Label Strings
     wrfvar = ['UP_HELI_MAX', 'REFL_10CM', 'UP_HELI_MAX', 'UP_HELI_MAX', 'WSPD10MAX']
@@ -1029,10 +1029,11 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
     meandescr = ['UH Max', 'DBZ Max', 'UH Max', 'UH Max', 'Wind Speed Avg']
 
     # Calculate SPC Practically Perfect Probs for plotting
-    pperf, plons, plats = calc_prac_perf(runinit, sixhour, time)
+    pperf, plons, plats, rlons, rlats = calc_prac_perf(runinit, sixhour, time)
 
     # Begin plotting madness
     for i in range(len(figstrs)):
+        print(i)
         print("Plotting {}".format(figstrs[i]))
         fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2, sharex='col', sharey='row',
              figsize=(10,12), subplot_kw={'projection': ccrs.LambertConformal(central_longitude=clon, central_latitude=clat, 
@@ -1102,7 +1103,7 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
                 print(np.max(pperf*100))
                 cfpperf = ax4.contourf(plons, plats, pperf*100, cflevs, cmap=nclcmaps.cmap('precip3_16lev'), 
                                        transform=ccrs.PlateCarree(), alpha=0.8, zorder=1)
-                pperfcbar = fig.colorbar(cfpperf, fraction=0.046, pad=0.04, ax=ax4, orientation='vertical', 
+                pperfcbar = fig.colorbar(cfpperf, ax=ax4, fraction=0.046, pad=0.04, orientation='vertical', 
                      label='Probability (Percent)')
                 #pperfcbar.ax.set_yticklabels(['{:.0f}'.format(x) for x in cflevs])
             # Add legend for SPC reports
@@ -1181,12 +1182,12 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
         fig.suptitle('Response Function: {} {} at f{} \n Valid for Run Initialized: {} \n Response Endtime: {}'.format(timeframe, titlevars[i], 
                   time, str(runinit), str(rdate)))
         ax1.set_title('Full Ens Prob of {} with {} km Neighborhood \n Mean {}: {:.2f}'.format(rstrs[i],
-                      int(nbrhd), meandescr[i], fullmeans[i]))
+                      int(nbrhd), meandescr[i], fullmeans[i]), fontsize=9)
         ax2.set_title('Subset Prob of {} with {} km Neighborhood \n Mean {}: {:.2f}'.format(rstrs[i], 
-                      int(nbrhd), meandescr[i], submeans[i]))
-        ax3.set_title(r'Delta Probs (Subset - Full Ensemble)')
-        ax5.set_title('Full Ens Paintball of {}'.format(rstrs[i]))
-        ax6.set_title('Subset Paintball of {}'.format(rstrs[i]))
+                      int(nbrhd), meandescr[i], submeans[i]), fontsize=9)
+        ax3.set_title(r'$\delta$Probs (Subset - Full Ensemble)', fontsize=9)
+        ax5.set_title('Full Ens Paintball of {}'.format(rstrs[i]), fontsize=9)
+        ax6.set_title('Subset Paintball of {}'.format(rstrs[i]), fontsize=9)
         plt.savefig(base + dirdate + '/sixpanel_{}'.format(figstrs[i]))
         plt.close()
     

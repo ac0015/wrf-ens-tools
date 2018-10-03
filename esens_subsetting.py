@@ -38,15 +38,14 @@
 
 import numpy as np
 from netCDF4 import Dataset
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-from cartopy import feature as cfeat
-#np.set_printoptions(precision=20)
+#import matplotlib.pyplot as plt
+#import cartopy.crs as ccrs
+#from cartopy import feature as cfeat
     
 def point(matrix):
     '''
     Builds a mask that is true for a matrix everywhere 
-    except the highest value point in the matrix.
+    except the highest magnitude value point in the matrix.
     '''
     maxval = []
     mask = np.zeros_like(matrix, dtype=bool)

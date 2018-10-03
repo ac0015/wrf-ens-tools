@@ -70,6 +70,7 @@ class Subset:
         self._thresh = thresh
         self._nbr = nbrhd
         
+        # If method is not in methodchoices, set to percent (RMS) method
         try:
             self._method = self._methodchoices[subset_method]
         except:
@@ -92,12 +93,10 @@ class Subset:
         else:
             raise ValueError('{} not a vaid option. RAP and WRF are supported analyisis types.'.format(self._analysis_type))
         
+        # Set sensitivity time sens variable values filepath and prob filepaths
         self._sensvalfile = sens.getDir() + sensvalfile
         self._fensprob = "FULLENSwrfout_nbr{}_f{}.prob".format(int(self._nbr), self._sens.getRTime())
         self._subprob = "SUBSETwrfout_nbr{}_f{}.prob".format(int(self._nbr), self._sens.getRTime())
-        
-        # Set to True if calcProbs was last run for a subset.
-        self._calcprobs_subset = False
         
     def __str__(self):
         return "Subset object with full ensemble of {} members, subset size of {}, and using the {} subsetting method \
@@ -107,14 +106,17 @@ class Subset:
         
     def setSubsetMethod(self, subset_method):
         '''
-        Set the ensemble subsetting method
+        Set the ensemble subsetting method given a
+        string. Current choices are: 'point', 'weight',
+        or 'percent'.
         '''
         self._method = self._methodchoices[subset_method]
         return
     
     def setSubsetSize(self, subset_size):
         '''
-        Set the ensemble subset size.
+        Set the ensemble subset size with
+        an integer.
         '''
         self._subsize = subset_size
         return
@@ -123,7 +125,7 @@ class Subset:
         '''
         Set the absolute path of the interpolated analysis file
         to be used for verification and set the analysis type.
-        Options for analysis type are RAP or WRF. Make sure the
+        Options for analysis type are 'RAP' or 'WRF'. Make sure the
         analysispath is of the same type described in analysistype.
         '''
         self._analysis = analysispath
@@ -140,6 +142,12 @@ class Subset:
         Returns a list of the members in the subset.
         '''
         return self._subset
+    
+    def getFullEns(self):
+        '''
+        Returns a list of members of the full ensemble.
+        '''
+        return self._fullens
     
     def getSens(self):
         '''
@@ -174,16 +182,19 @@ class Subset:
         nalysis attribute of the Subset instance.
         '''
         basedir = self.getSens().getDir()
-        # Analysis will only be one file without subdirectory, but still
+        # Analysis will only be one file without any subdirectories, but still
         #  need to give process_wrf a dictionary, so let gen_dict()
         #  take care of that.
         inpath = gen_dict(basedir, 1, subdir="", ntimes=1)
         # Use default vars for process_wrf and default naming conventions.
         process_wrf(inpath, outpath=self._analysis, reduced=True)
+        return
         
     def calcSubset(self):
         '''
-        Calls the ensSubset() function from esens_subsetting.py. 
+        Calls the ensSubset() function from esens_subsetting.py.
+        Returns the subset members based on the subset technique
+        parameters of the Subset obj.
         '''
         S = self.getSens()
         if (os.path.isfile(self._analysis) == False):
@@ -212,11 +223,12 @@ class Subset:
         '''
         Runs the fortran executable calcprobSUBSET to calculate
         probabilities for any number of ensemble members. Takes
-        an input file with ensemble number
+        an input file with ensemble number, ensemble members,
+        response time, neighborhood, and prob output path.
         '''
         S = self.getSens()
         
-        ### calcProbs-specific error-handling methods. #######
+        ############### calcProbs-specific error-handling methods. ############
         def checkOverHundred(probpath, sens_obj, args):
             '''
             Prints max probability and returns True if max prob
@@ -242,7 +254,6 @@ class Subset:
                 probs = Dataset(probout)
                 probvar = probs.variables['P_HYD'][0]
                 possible_fail = np.max(probvar[:4]) == 0.
-                #print("Max probability: ", np.max(probvar[:4]))
                 probs.close()
             except:
                 reRun(probpath, sens_obj, args)
@@ -258,6 +269,7 @@ class Subset:
             os.popen("cp {} {}".format(sens_obj.getRefFileD2(), probpath))
             subprocess_cmd(args)
             return
+        ############## End Error-Handling Methods ############################
 
         # Create or navigate into probs directory
         probdir = S.getDir() + "probs/"
@@ -269,11 +281,9 @@ class Subset:
         if len(members) == len(self._fullens): 
             fname = "fullens_probs.in"
             probout = self._fensprob
-            self._calcprobs_subset = False
         else: 
             fname = "subset_probs.in"
             probout = self._subprob
-            self._calcprobs_subset = True
             
         # Format input file
         os.popen('echo {} > {}'.format(len(members), fname))
@@ -416,7 +426,8 @@ class Subset:
         dirdate = str(yr) + str(mo) + str(day) + str(hr)
         research_plotting.plotSixPanels(dirdate, storm_reports, 
                                         self.getSubMembers(), sixhour=False,
-                                        time=S.getRTime(), subsettype=rfunclabel)
+                                        time=S.getRTime(), subsettype=rfunclabel,
+                                        nbrhd=self._nbr)
         return
     
     def storePracPerf(self, pperfpath, sigma=2):
