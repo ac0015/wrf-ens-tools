@@ -18,8 +18,8 @@ date = str(sys.argv[2])
 yr, mo, day, hr = int(date[:4]), int(date[4:6]), int(date[6:8]), int(date[8:])
 print(yr, mo, day, hr)
 init = datetime(yr, mo, day, hr)
-sens_times = [6,12]
-subset_sizes = [1,2,4,6,10,15,20,25, 30, 35, 40]
+sens_times = [6]
+subset_sizes = [1, 2, 4, 6, 10, 15, 20, 25, 30, 35, 40]
 subset_methods = ['weight', 'percent']
 # Each sig level and then all sens vars
 sensvars = [['300_hPa_GPH', '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind'], 
@@ -36,8 +36,8 @@ sensvars = [['300_hPa_GPH', '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind'],
              'SLP', '2m_Temp', '2m_Dewpt', '10m_U-Wind', '10m_V-Wind']]
 percents = [0., 10., 20., 30., 40., 50., 60., 70., 80., 90.]
 uh_thresh = [25., 40., 100.]
-nbrs = [30., 45., 60.]
-sigma = [0, 1, 2]
+nbrs = [30.]
+sigma = [1]
 # TO-DO: add WRF-analysis
 analysis = ["RAP"]
 
@@ -79,9 +79,11 @@ for senstime in sens_times:
            os.popen('rm {}'.format(outpath))
         post.storeNearestNeighbor(init, [rtime], 
                                   outpath, nbrhd=nbr)
-    sub.interpRAP()
+    
+    if os.path.exists(sub._analysis) == False:
+        sub.interpRAP()
     del sub
-    statspath = direc + 'stats.nc'
+    statspath = direc + 'stats_reduced.nc'
     # Get stats for different subset combos
     for subsize in subset_sizes:
         for method in subset_methods:

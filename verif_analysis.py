@@ -10,7 +10,7 @@ import numpy as np
 from os import chdir
 from datetime import datetime, timedelta
 
-ncfiles = ['/lustre/research/bancell/aucolema/HWT2016runs/2016051000/stats.nc']
+ncfiles = ['/lustre/research/bancell/aucolema/HWT2016runs/2016050900/stats_reduced.nc']
 
 # Plot FSS for subset size/pperf sigma
 fullensnum = 42
@@ -93,10 +93,10 @@ for file in ncfiles:
     fens_rbox = dat.variables['Full_Ens_FSS_Rbox'][inds]
     fss_all = dat.variables['Subset_FSS_Total'][inds]
     fss_rbox = dat.variables['Subset_FSS_Rbox'][inds]
-    sens_vars = [list(x) for x in set(tuple(x) for x in sensvars)]
-    colors_rbox = ['darkorange', 'maroon', 'purple', 'midnightblue', 
+    sens_vars = [list(x) for x in set(tuple(x) for x in sensvars[:1])]
+    colors_rbox = ['purple', 'darkorange', 'maroon', 'purple', 'midnightblue', 
                   'darkolivegreen', 'seagreen', 'red']
-    colors_all = ['coral', 'indianred', 'mediumorchid', 'royalblue',
+    colors_all = ['green', 'coral', 'indianred', 'mediumorchid', 'royalblue',
                    'olive', 'mediumseagreen', 'orangered']
     senstimes = dat.variables['Sens_Time'][inds]
     nbrs = dat.variables['Neighborhood'][inds]
@@ -133,11 +133,15 @@ for file in ncfiles:
                                                 & (senstimes[sens_mask] == stime) & (nbrs[sens_mask] == nbr) \
                                                 & (uhthresh[sens_mask] == uh_thresh))
                             x = x[sub_inds]
+                            bugmask = (subsize[sens_mask][sub_inds] > 4) & (fss_rbox_tmp[sub_inds] < 0.001)
                             y_all = fss_all_tmp[sub_inds]
                             y_rbox = fss_rbox_tmp[sub_inds]
+                            x_masked = np.ma.masked_array(x, mask=bugmask)
+                            y_all_masked = np.ma.masked_array(y_all, mask=bugmask)
+                            y_rbox_masked = np.ma.masked_array(y_rbox, mask=bugmask)
                             if (method == 'percent') and (percent == 0.):
                                 print('We have a winner!')
-                                color_all = 'darkgray'
+                                color_all = 'gray'
                                 color_rbox = 'k'
                                 lw = 3.
                                 zorder = 10
@@ -148,11 +152,11 @@ for file in ncfiles:
                                 zorder = 8
                                 lw = 1.
                                 alpha = 0.5
-                            plt.plot(x[x<fullensnum], y_all[x<fullensnum], 'd', c=color_all, ls='-', 
+                            plt.plot(x_masked[x_masked<fullensnum], y_all_masked[x_masked<fullensnum], 'd', c=color_all, ls='-', 
                                      linewidth=lw, zorder=zorder, alpha=alpha)
-                            plt.plot(x[x<fullensnum], y_rbox[x<fullensnum], 'd', c=color_rbox, ls='-', 
+                            plt.plot(x_masked[x_masked<fullensnum], y_rbox_masked[x_masked<fullensnum], 'd', c=color_rbox, ls='-', 
                                      linewidth=lw, zorder=zorder, alpha=alpha)
-                            #print(method, percent, stime, nbr, uhthresh[sub_inds], sig[sub_inds], y_all, y_rbox)
+                            print(method, percent, stime, nbr, uhthresh[sub_inds], sig[sub_inds], y_all, y_rbox)
                             del sub_inds
                             del x
                             del y_all
@@ -160,11 +164,12 @@ for file in ncfiles:
         i += 1 
     x = np.unique(subsize[subsize<fullensnum])         
     fens_all_masked = fens_all[(uhthresh == uhthresholds[0]) & (nbrs == nbrhds[0])]
-    print(np.min(fens_all_masked), np.max(fens_all_masked))         
-    plt.plot(x, np.ones_like(x)*np.mean(fens_all_masked), ls='--',
-                             linewidth=2., c='maroon', label='Full Ensemble Total Domain FSS')
-    plt.plot(x, np.ones_like(x)*np.mean(fens_rbox[(uhthresh == uhthresholds[0]) & (nbrs == nbrhds[0])]), ls='--',
-                             linewidth=2., c='blue', label='Full Ensemble Response Box FSS')
+    fens_rbox_masked = fens_rbox[(uhthresh == uhthresholds[0]) & (nbrs == nbrhds[0])]
+    print(np.unique(fens_all_masked), np.unique(fens_rbox_masked))         
+    plt.plot(x, np.ones_like(x)*np.unique(fens_all_masked)[0], ls='--',
+                             linewidth=3., c='navy', zorder=10, label='Full Ensemble Total Domain FSS')
+    plt.plot(x, np.ones_like(x)*np.unique(fens_rbox_masked)[0], ls='--',
+                             linewidth=3., c='maroon', zorder=10, label='Full Ensemble Response Box FSS')
 l = plt.legend(fontsize=5)
 l.set_zorder(13)
 if len(list(sens_var)) > 6:

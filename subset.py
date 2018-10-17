@@ -503,8 +503,8 @@ class Subset:
                                            thresh=self._thresh, rboxpath=S.getDir()+'esens.in',
                                            sixhr=False, nbrhd=self._nbr)
             # prob_bins and ob hit rate variables will stay the same, so OK to clobber
-            prob_bins, f_fcstfreq_tot, ob_hr_tot, f_fcstfreq_rbox, ob_hr_rbox = fens_reliability
-            prob_bins, s_fcstfreq_tot, ob_hr_tot, s_fcstfreq_rbox, ob_hr_rbox = sub_reliability
+            prob_bins, f_fcstfreq_tot, f_ob_hr_tot, f_fcstfreq_rbox, f_ob_hr_rbox = fens_reliability
+            prob_bins, s_fcstfreq_tot, s_ob_hr_tot, s_fcstfreq_rbox, s_ob_hr_rbox = sub_reliability
             f_fss_tot, f_fss_rbox, sig = fens_fss
             s_fss_tot, s_fss_rbox, sig = sub_fss
             init = statsout.variables['Run_Init']
@@ -547,10 +547,10 @@ class Subset:
             subfssrbox[n] = s_fss_rbox
             pperfsig[n] = sig
             nbr[n] = self._nbr
-            fens_rel_tot[n,:,:] = np.atleast_2d(np.vstack((prob_bins, f_fcstfreq_tot, ob_hr_tot)))[:]
-            fens_rel_rbox[n,:,:] = np.atleast_2d(np.vstack((prob_bins, f_fcstfreq_rbox, ob_hr_rbox)))[:]
-            sub_rel_tot[n,:,:] = np.atleast_2d(np.vstack((prob_bins, s_fcstfreq_tot, ob_hr_tot)))[:]
-            sub_rel_rbox[n,:,:] = np.atleast_2d(np.vstack((prob_bins, s_fcstfreq_rbox, ob_hr_rbox)))[:]
+            fens_rel_tot[n,:,:] = np.atleast_2d(np.vstack((prob_bins, f_fcstfreq_tot, f_ob_hr_tot)))[:]
+            fens_rel_rbox[n,:,:] = np.atleast_2d(np.vstack((prob_bins, f_fcstfreq_rbox, f_ob_hr_rbox)))[:]
+            sub_rel_tot[n,:,:] = np.atleast_2d(np.vstack((prob_bins, s_fcstfreq_tot, s_ob_hr_tot)))[:]
+            sub_rel_rbox[n,:,:] = np.atleast_2d(np.vstack((prob_bins, s_fcstfreq_rbox, s_ob_hr_rbox)))[:]
             statsout.close()
         else:
             raise FileNotFoundError('Please run storePracPerf() or set correct obpath.')
