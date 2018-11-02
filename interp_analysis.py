@@ -21,7 +21,7 @@ import subprocess
 # Austin Coleman
 # 12/27/2017
 #
-# Python library to interpolate RAP analysis from 
+# Python library to interpolate RAP analysis from
 # desired date/time to our WRF grid and save
 # off the interpolated analysis to a netCDF4 file.
 ##################################################
@@ -31,7 +31,7 @@ def subprocess_cmd(command):
     process = subprocess.Popen(command,stdout=subprocess.PIPE, shell=True)
     proc_stdout = process.communicate()[0].strip()
     print(proc_stdout)
-    
+
 def fromDatetime(date, interp=False):
     '''
     Slices components of a datetime.datetime object and returns
@@ -41,19 +41,19 @@ def fromDatetime(date, interp=False):
     year = str(date.year)
     # Convert any 1-digit integers to 2-digit strings
     if len(str(date.month)) == 1: month = "0"+str(date.month)
-    else: month = str(date.month)      
+    else: month = str(date.month)
     if len(str(date.day)) == 1: day = "0"+str(date.day)
-    else: day = str(date.day) 
+    else: day = str(date.day)
     if len(str(date.hour)) == 1: hour = "0"+str(date.hour)
     else: hour = str(date.hour)
     if interp: hour += "00" # Append two zeroes for 4-digit hr
     return year, month, day, hour
-    
+
 #@profile
 def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
     '''
-    A method which interpolates a function 
-    z(grid1x, grid1y) of a grid (grid1x, grid1y) to another 
+    A method which interpolates a function
+    z(grid1x, grid1y) of a grid (grid1x, grid1y) to another
     grid (grid2x, grid2y). Returns an array from the approximated
     function of the second grid (approximation of z(grid2x, grid2y)).
     '''
@@ -64,44 +64,44 @@ def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
     interp = interpolate.LinearNDInterpolator(coords_from, Z, fill_value=9e9)
     # Interpolate to new grid
     interpolated_z = interp(grid2y, grid2x)
-    
+
     return interpolated_z
-    
+
 # In[29]:
 
 def interpRAPtoWRF(yr, mo, day, hr, wrfref):
     '''
     Method to interpolate a RAP analysis pulled from the NCSS server
     to a user-provided WRF grid for a specific day and time.
-    
-    Inputs 
+
+    Inputs
     ------
     yr     - 4-digit year as string
     month  - 2-digit month (i.e. 02 for February) as string
     day    - 2-digit day as string
     hr     - 4-digit hour (i.e. 1200 for 12 UTC) as string
     wrfref - filepath to wrfout grid file to which RAP will be interpolated
-    
+
     Outputs
     -------
     Returns NULL but will produce a netCDF4 file with interpolated RAP in the
     directory where method was called. Also produces a test .png file comparing
     RAP to interpolated RAP to ensure that the interpolation worked.
     '''
-    
+
     # Read RAP datset
-    rap = ncss.NCSS("https://www.ncei.noaa.gov/thredds/ncss/grid/rap130anl/{}{}/{}{}{}/rap_130_{}{}{}_{}_000.grb2".format(yr, 
+    rap = ncss.NCSS("https://www.ncei.noaa.gov/thredds/ncss/grid/rap130anl/{}{}/{}{}{}/rap_130_{}{}{}_{}_000.grb2".format(yr,
                     mo, yr, mo, day, yr, mo, day, hr))
-    
+
     # Develop query
     query = ncss.NCSSQuery()
     query.variables('all')
     query.add_lonlat()
-    
+
     # Pull RAP data
     rap_anl = rap.get_data(query)
     rlons, rlats = rap_anl.variables['lon'][:,:], rap_anl.variables['lat'][:,:]
-    
+
     # Start pulling variables
     gph = rap_anl.variables['Geopotential_height_isobaric']
     isobaric = rap_anl.variables['isobaric']
@@ -116,7 +116,7 @@ def interpRAPtoWRF(yr, mo, day, hr, wrfref):
     slp = rap_anl.variables['MSLP_MAPS_System_Reduction_msl'][0,:,:]
     uwind_hgt = rap_anl.variables['u-component_of_wind_height_above_ground']
     vwind_hgt = rap_anl.variables['v-component_of_wind_height_above_ground']
-    
+
     # Designate vertical levels of interest
     lev925 = np.where(isobaric[:] == 92500.)[0][0]
     lev850 = np.where(isobaric[:] == 85000.)[0][0]
@@ -126,7 +126,7 @@ def interpRAPtoWRF(yr, mo, day, hr, wrfref):
     lev2m = np.where(hgt_above_gnd[:] == 2.)[0][0]
     lev10m = np.where(hgt_above_gnd4[:] == 10.)[0][0]
 
-    # Specific variables 
+    # Specific variables
     gph300 = gph[0,lev300,:,:]
     gph500 = gph[0,lev500,:,:]
     gph700 = gph[0,lev700,:,:]
@@ -159,20 +159,20 @@ def interpRAPtoWRF(yr, mo, day, hr, wrfref):
                        "700 hPa U-Wind","850 hPa U-Wind","925 hPa U-Wind","300 hPa V-Wind","500 hPa V-Wind",
                        "700 hPa V-Wind","850 hPa V-Wind","925 hPa V-Wind","SLP","2m Temp","2m Q",
                        "2m Dewpt","10m U-Wind","10m V-Wind"]
-    
+
     # Initialize geographic coordinate system
     geo = cs.GeographicSystem()
-    
+
     # Read one of our WRF files in for grid purposes
     wrf_d1 = Dataset(wrfref)
     lons, lats = wrf_d1.variables['XLONG'][0], wrf_d1.variables['XLAT'][0]
     wrf_idim = len(lons[0,:])
-    wrf_jdim = len(lats[:,0])  
-    
-    # Convert to Eart-Center-Earth-Fixed for common origin
+    wrf_jdim = len(lats[:,0])
+
+    # Convert to Earth-Center-Earth-Fixed for common origin
     wecefx, wecefy, wecefz = geo.toECEF(lons, lats, lats)
     recefx, recefy, recefz = geo.toECEF(rlons, rlats, rlats)
-    
+
     # Write interpolated variables to netCDF
     interpnc = Dataset(str("RAP_interp_to_WRF_{}{}{}{}.nc".format(yr,
                            mo, day, hr)), "w", format="NETCDF4")
@@ -183,7 +183,7 @@ def interpRAPtoWRF(yr, mo, day, hr, wrfref):
     xlat[:,:] = lats
     xlon = interpnc.createVariable("XLONG", float, dimensions=('lat','lon'))
     xlon[:,:] = lons
-    
+
     # Interpolate and save!!
     RAPinterp = np.zeros((len(sensvarlist), len(lats[:,0]), len(lons[0,:])))
     for i in range(len(sensvarlist)):
@@ -191,10 +191,10 @@ def interpRAPtoWRF(yr, mo, day, hr, wrfref):
         var = interpnc.createVariable(sensstringslist[i].replace(" ","_"), RAPinterp[i].dtype, dimensions=('lat','lon'))
         var[:,:] = RAPinterp[i]
     interpnc.close()
-    
+
     return
 
-def plotRAPinterp(rapfile, var="500_hPa_GPH"):      
+def plotRAPinterp(rapfile, var="500_hPa_GPH"):
     rap = Dataset(rapfile)
     lons, lats = rap.variables['XLONG'], rap.variables['XLAT']
     rapvar = rap.variables[var]
@@ -202,7 +202,7 @@ def plotRAPinterp(rapfile, var="500_hPa_GPH"):
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal())
     state_borders = cfeat.NaturalEarthFeature(category='cultural',
-               name='admin_1_states_provinces_lakes', scale='50m', facecolor='None') 
+               name='admin_1_states_provinces_lakes', scale='50m', facecolor='None')
     ax.add_feature(state_borders, linestyle="-", edgecolor='dimgray')
     ax.add_feature(cfeat.BORDERS, edgecolor='dimgray')
     ax.add_feature(cfeat.COASTLINE, edgecolor='dimgray')
@@ -215,22 +215,11 @@ def plotRAPinterp(rapfile, var="500_hPa_GPH"):
        ax.clabel(interp)
     else:
        cflevels = np.linspace(np.min(rapvar_masked[:,:]), np.max(rapvar_masked[:,:]), 21)
-       interp = ax.contourf(lons[:,:], lats[:,:], rapvar_masked[:,:], cflevels, transform=ccrs.PlateCarree(),  
+       interp = ax.contourf(lons[:,:], lats[:,:], rapvar_masked[:,:], cflevels, transform=ccrs.PlateCarree(),
                        alpha=0.7, antialiased=True)
        fig.colorbar(interp, fraction=0.046, pad=0.04, orientation='horizontal')
     ax.set_title(var.replace("_"," ")+" RAP Analysis")
     plt.savefig("RAP_Analysis_"+var)
     plt.close()
-    
-    return
 
-#if __name__ == '__main__':
-#    # Assumes wrfoutREF in current directory
-#    yr = input("Please type in 4-digit year: ")
-#    mo = input("Please type in 2-digit month: ")
-#    day = input("Please type in 2-digit day: ")
-#    hr = input("Please type in 4-digit hour: ")
-#    wrfref = "wrfoutREF"
-#    interp_rap_to_wrf(yr, mo, day, hr, wrfref)
-#    rapfile="RAP_interp_to_WRF_"+yr+mo+day+hr+".nc"
-#    plot_rap_interp(rapfile)
+    return

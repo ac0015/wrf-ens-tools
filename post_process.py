@@ -5,7 +5,7 @@ Created on Tue Jul 24 16:07:43 2018
 
 A library of post-processing functions
 for executing a variety of wrf-python
-procedures. Output is meant to be used 
+procedures. Output is meant to be used
 with the wrf-arw-tools verification
 suite.
 
@@ -23,22 +23,22 @@ dflt_var = ['td2', 'T2']
 dflt_pres = [300., 500., 700., 850., 925.]
 dflt_outnames = ["2m_Dewpt", "2m_Temp"]
 
-def renameWRFOUT(enspath, ensnum, runinit, 
+def renameWRFOUT(enspath, ensnum, runinit,
                  subdir='mem{}/', reduced=False, ntimes=48):
     '''
     Renames wrfout files for specified ensnum. Originally
     created for use with ensemble sensitivity analysis,
     the method assumes two domains, d01 and d02, which
-    become the sensitivity field domains (SENS) and 
+    become the sensitivity field domains (SENS) and
     response domains (R) respectively.
-    
+
     Inputs
     ------
     enspath -- filepath string to ensemble directory
     ensnum --- int for number of ensemble members
     runinit -- datetime object for ensemble initialization time
     subdir --- string depicting member file structure in ensemble
-                directory. Leave format space to format with 
+                directory. Leave format space to format with
                 member number if needed. Use empty string
                 if all files are in the enspath folder, or if
                 renaming for a deterministic run.
@@ -47,11 +47,11 @@ def renameWRFOUT(enspath, ensnum, runinit,
                 so, uses altered naming convention.
     ntimes --- optional int to specify number of forecast hours.
                 Assumes 48-hr forecast unless otherwise specified.
-    
+
     Outputs
     -------
     returns NULL
-    
+
     Example
     -------
         enspath = '/path/to/ens/run/'
@@ -59,9 +59,9 @@ def renameWRFOUT(enspath, ensnum, runinit,
         subdirec  = 'member{}/'
         run = datetime(2016, 5, 8, 0) ### 0 Z run on May 8, 2016
         ##### Run renameWRFOUT #####
-        renameWRFOUT(enspath, ensnum, runinit=run, subdir=subdirec, 
+        renameWRFOUT(enspath, ensnum, runinit=run, subdir=subdirec,
                      reduced=False, ntimes=24)
-        
+
         # This file:
         # /path/to/ens/run/member1/wrfout_d01_2016-05-08_23:00:00
         # would become this file:
@@ -72,7 +72,7 @@ def renameWRFOUT(enspath, ensnum, runinit,
         # /path/to/ens/run/member1/R1_23.out
 
         ##### If function is ran with reduced set to True #####
-        renameWRFOUT(enspath, ensnum, runinit=run, subdir=subdirec, 
+        renameWRFOUT(enspath, ensnum, runinit=run, subdir=subdirec,
                      reduced=True, ntimes=24)
         # Expects this file:
         # /path/to/ens/run/member1/wrfout_d02_red_2016-05-08_23:00:00
@@ -85,7 +85,7 @@ def renameWRFOUT(enspath, ensnum, runinit,
         for t in range(ntimes + 1):
             # Current forecast datetime object
             current = runinit + timedelta(hours = t)
-            
+
             # Take care of leading zeros to build path string
             if len(str(current.month)) == 1: mo = "0" + str(current.month)
             else: mo = str(current.month)
@@ -93,22 +93,22 @@ def renameWRFOUT(enspath, ensnum, runinit,
             else: day = str(current.day)
             if len(str(current.hour)) == 1: hr = "0" + str(current.hour)
             else: hr = str(current.hour)
-            
+
             # Build path string
             domain_strs = ['SENS', 'R']
             d = 1
-            
+
             # If reduced, files have different naming conventions
             if reduced:
-                wrfout_strs = ['{}wrfout_d0{}_red_{}-{}-{}_{}:00:00', 
-                               '{}wrfout_d0{}_red_{}-{}-{}_{}:00:00']                
+                wrfout_strs = ['{}wrfout_d0{}_red_{}-{}-{}_{}:00:00',
+                               '{}wrfout_d0{}_red_{}-{}-{}_{}:00:00']
             else:
-                wrfout_strs = ['{}wrfout_d0{}_{}-{}-{}_{}:00:00', 
+                wrfout_strs = ['{}wrfout_d0{}_{}-{}-{}_{}:00:00',
                                '{}wrfout_d0{}_{}-{}-{}_{}:00:00']
-                
+
             # Assumes an outer and nested domain
             for d in range(len(domain_strs)):
-                tmp = wrfout_strs[d].format(sub, 
+                tmp = wrfout_strs[d].format(sub,
                        str(d), str(current.year), mo, day, hr)
                 new = '{}{}{}_{}.out'.format(sub, domain_strs[d], str(i+1), str(t))
                 tmpexists, newexists = os.path.isfile(tmp), os.path.isfile(new)
@@ -121,25 +121,25 @@ def renameWRFOUT(enspath, ensnum, runinit,
 def gen_dict(enspath, ensnum, subdir="mem{}", ntimes=48):
     '''
     Generate dictionary of WRF outfiles sorted by
-    ensemble member (or deterministic run) to feed 
+    ensemble member (or deterministic run) to feed
     into process_wrf(). Uses naming conventions
     described in renameWRFOUT().
-    
+
     Inputs
     ------
     enspath -- filepath string to ensemble directory
     ensnum --- int for number of ensemble members
     subdir --- string depicting member file structure in ensemble
-                directory. Leave format space to format with 
+                directory. Leave format space to format with
                 member number if needed. Use empty string
                 if all files are in the enspath folder, or if
                 renaming for a deterministic run.
     ntimes --- optional int to specify number of forecast hours.
                 Assumes 48-hr forecast unless otherwise specified.
-    
+
     Outputs
     -------
-    returns dictionary of WRF outfile paths (keys are members and 
+    returns dictionary of WRF outfile paths (keys are members and
     values are lists of corresponding member filepaths).
     '''
     # Initiate dictionary
@@ -148,25 +148,25 @@ def gen_dict(enspath, ensnum, subdir="mem{}", ntimes=48):
         # Create member index key
         key = i + 1
         # Generate list of filepaths based on assumed naming conventions
-        li = ['{}{}{}'.format(enspath, 
+        li = ['{}{}{}'.format(enspath,
              subdir.format(i+1), '/R{}_{}.out'.format(i+1, time)) for time in range(ntimes+1)]
         # Make sure all the filepaths exist
         if np.array([os.path.exists(l) for l in li]).all():
             paths[key] = li
         else:
-            raise FileNotFoundError("File(s) from member {} do not exist.".format(key))    
+            raise FileNotFoundError("File(s) from member {} do not exist.".format(key))
         print(paths[key])
     return paths
 
 # Main post-processing method for deterministic or ensemble runs.
-def process_wrf(inpaths, outpath, reduced=True, 
+def process_wrf(inpaths, outpath, reduced=True,
                 refpath='/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2',
                 var=dflt_var, interp_levs=dflt_pres, outvar_names=dflt_outnames):
     '''
-    A method for post-processing a list of WRF outfiles into 
+    A method for post-processing a list of WRF outfiles into
     one interpolated outfile for use with the verification
     suite.
-    
+
     Inputs
     ------
     inpaths ------ dictionary of filepath strings for WRF outfiles
@@ -178,20 +178,20 @@ def process_wrf(inpaths, outpath, reduced=True,
                     Defaults to True, which means WRF reference
                     file will be used.
     refpath ------ optional string path to WRF reference file. Only
-                    used if reduced is set to True, and defaults 
+                    used if reduced is set to True, and defaults
                     to a reference file on Quanah that represents
                     the 4-km domain of the real-time TTU system.
     var ---------- list of strings depicting variables to process
-                    and store in addition to pressure and height. 
+                    and store in addition to pressure and height.
                     Defaults to dbz, slp, uh, and 10m winds variables.
                     Uses naming conventions from wrf-python module, can find at:
                     http://wrf-python.readthedocs.io/en/latest/diagnostics.html
     interp_levs -- list of floats depicting pressure levels to which heights
                     will be interpolated.
-    
+
     Outputs
     -------
-    returns NULL but saves post-process variables and metadata to outpath.    
+    returns NULL but saves post-process variables and metadata to outpath.
     '''
     # Pull original dimensions from input files
     datasets = inpaths.copy()
@@ -205,14 +205,14 @@ def process_wrf(inpaths, outpath, reduced=True,
     if reduced:
         wrfref = Dataset(refpath)
         wrf.disable_xarray()
-        ref_cache = wrf.extract_vars(wrfref, wrf.ALL_TIMES,  
-                                     ("PB", "PH", "PHB", "HGT", 
+        ref_cache = wrf.extract_vars(wrfref, wrf.ALL_TIMES,
+                                     ("PB", "PH", "PHB", "HGT",
                                       "XLAT", "XLONG", "MAPFAC_M"))
     # Else, cache lats/lons and base state values from first file
     #  for quicker calculations.
     else:
-        ref_cache = wrf.extract_vars(datasets[1][0], wrf.ALL_TIMES,  
-                                     ("PB", "PH", "PHB", "HGT", 
+        ref_cache = wrf.extract_vars(datasets[1][0], wrf.ALL_TIMES,
+                                     ("PB", "PH", "PHB", "HGT",
                                       "XLAT", "XLONG", "MAPFAC_M"))
     # Create output file
     outfile = Dataset(outpath, 'w')
@@ -224,7 +224,7 @@ def process_wrf(inpaths, outpath, reduced=True,
     outfile.createDimension(lat.name, lat.size)
     outfile.createDimension(lon.name, lon.size)
     outfile.createDimension(sigma.name, sigma.size)
-    
+
     # datasets.keys() are the member numbers, which contain
     #  all output file paths for that member in a list
     for i in range(len(datasets.keys())):
@@ -244,7 +244,7 @@ def process_wrf(inpaths, outpath, reduced=True,
             u = wrf.getvar(dat, 'ua', units='m s-1', cache=ref_cache)
             v = wrf.getvar(dat, 'va', units='m s-1', cache=ref_cache)
             #uv = wrf.getvar(dat, 'wspd_wdir10', units='degC', cache=ref_cache)
-            
+
             # Use levels from UI
             for lev in interp_levs:
                 lev_ht = wrf.interplevel(z, p, lev)
@@ -256,21 +256,21 @@ def process_wrf(inpaths, outpath, reduced=True,
                 uvar = '{}_hPa_U'.format(int(lev))
                 vvar = '{}_hPa_V'.format(int(lev))
                 if ht_var not in outfile.variables.keys():
-                    outvar_hgt = outfile.createVariable(ht_var, lev_ht.dtype, 
+                    outvar_hgt = outfile.createVariable(ht_var, lev_ht.dtype,
                                     (mems.name, time.name, lat.name, lon.name))
                 else:
                     outvar_hgt = outfile.variables[ht_var]
                 if temp_var not in outfile.variables.keys():
-                    outvar_temp = outfile.createVariable(temp_var, lev_temp.dtype, 
+                    outvar_temp = outfile.createVariable(temp_var, lev_temp.dtype,
                                 (mems.name, time.name, lat.name, lon.name))
                 else:
                     outvar_temp = outfile.variables[temp_var]
                 if uvar not in outfile.variables.keys():
                     # If uvar isn't in there, then vvar isn't either, so
                     #  create both.
-                    outvar_u = outfile.createVariable(uvar, lev_u.dtype, 
+                    outvar_u = outfile.createVariable(uvar, lev_u.dtype,
                                     (mems.name, time.name, lat.name, lon.name))
-                    outvar_v = outfile.createVariable(vvar, lev_v.dtype, 
+                    outvar_v = outfile.createVariable(vvar, lev_v.dtype,
                                     (mems.name, time.name, lat.name, lon.name))
                 else:
                     outvar_u = outfile.variables[uvar]
@@ -294,7 +294,7 @@ def process_wrf(inpaths, outpath, reduced=True,
                 nvars = len(np.shape(outvarnames))
                 #print(varname, dat)
                 invar = wrf.getvar(dat, varname, cache=ref_cache)
-                for n in range(nvars): 
+                for n in range(nvars):
                     outvarname = outvarnames[n]
                     #print(outvarname)
                     # Create variable if not created yet
@@ -334,7 +334,7 @@ def process_wrf(inpaths, outpath, reduced=True,
                         outvar = outfile.variables[outvarname]
                     if len(np.shape(invar)) > 2:
                         outvar[i, t] = invar[n]
-                    else: 
+                    else:
                         outvar[i, t] = invar[:]
                     del invar
                 k += 1
@@ -347,7 +347,7 @@ def storePracPerf(modelinit, fcsthrs, outpath, sigma=2):
     '''
     Calculate hourly practically perfect on WRF grid.
     Save to netCDF file for verification.
-    
+
     Inputs
     ------
     modelinit - WRF run initialization datetime obj
@@ -362,7 +362,7 @@ def storePracPerf(modelinit, fcsthrs, outpath, sigma=2):
 
     Outputs
     -------
-    returns NULL, but saves to netCDF outpath. 
+    returns NULL, but saves to netCDF outpath.
     '''
     # Create outfile
     netcdf_out = Dataset(outpath, 'w')
@@ -391,7 +391,7 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, nbrhd):
     '''
     Calculate hourly nearest neighbor on WRF grid.
     Save to netCDF file for verification.
-    
+
     Inputs
     ------
     modelinit - WRF run initialization datetime obj
@@ -408,7 +408,7 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, nbrhd):
 
     Outputs
     -------
-    returns NULL, but saves to netCDF outpath. 
+    returns NULL, but saves to netCDF outpath.
     '''
     # Create outfile
     netcdf_out = Dataset(outpath, 'w')
@@ -430,9 +430,10 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, nbrhd):
         nearest_out[t] = grid[:]
         times[t] = fcsthrs[t]
     netcdf_out.close()
-    return     
+    return
 # TO-DO: to make real-time useable, add prob calculation
 # with procalcSUBSET.f
 def calcEnsProbs(enspath, members, wrfref):
     pass
+
                 

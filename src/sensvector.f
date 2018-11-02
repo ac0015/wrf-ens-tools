@@ -1,11 +1,11 @@
 C$$$ This program writes out netcdf files of sensitivity and
 C$$$ response variables for use in other Python programs.
 C$$$ Input files are an ensemble of WRF files in the format
-C$$$ as seen below, which follows the naming conventions 
+C$$$ as seen below, which follows the naming conventions
 C$$$ laid out in 'rename_wrfout.sh'. Metadata used for 'projt'
 C$$$ comes from reference file 'wrfoutREF'. Must provide
 C$$$ input text file containing number of ensemble members
-C$$$ and time to pull sensitivity variables.
+C$$$ and sensitivity time.
 
       program sensvector
 
@@ -16,7 +16,7 @@ C$$$ compile with make maecalc (invokes Makefile)
       use map_utils
 
       implicit none
- 
+
       integer m
       integer iunitin
       type(proj_info) :: projt
@@ -47,29 +47,29 @@ C$$$ compile with make maecalc (invokes Makefile)
       real, pointer::psfc(:,:)
       real, pointer::q2(:,:)
       real, pointer :: gph300(:,:)
-      real, pointer :: gph500(:,:)  
-      real, pointer :: gph700(:,:)  
-      real, pointer :: gph850(:,:)  
-      real, pointer :: t300(:,:)  
-      real, pointer :: t500(:,:)  
-      real, pointer :: t700(:,:) 
-      real, pointer :: t850(:,:) 
-      real, pointer :: t925(:,:) 
+      real, pointer :: gph500(:,:)
+      real, pointer :: gph700(:,:)
+      real, pointer :: gph850(:,:)
+      real, pointer :: t300(:,:)
+      real, pointer :: t500(:,:)
+      real, pointer :: t700(:,:)
+      real, pointer :: t850(:,:)
+      real, pointer :: t925(:,:)
       real, pointer :: u300(:,:)
       real, pointer :: u500(:,:)
       real, pointer :: u700(:,:)
-      real, pointer :: u850(:,:) 
-      real, pointer :: u925(:,:) 
+      real, pointer :: u850(:,:)
+      real, pointer :: u925(:,:)
       real, pointer :: v300(:,:)
-      real, pointer :: v500(:,:)  
-      real, pointer :: v700(:,:)  
-      real, pointer :: v850(:,:) 
+      real, pointer :: v500(:,:)
+      real, pointer :: v700(:,:)
+      real, pointer :: v850(:,:)
       real, pointer :: v925(:,:)
       real, pointer :: q850(:,:)
-      real, pointer :: slp(:,:)   
-      real, pointer :: t2(:,:)  
-      real, pointer :: td2(:,:) 
-      real, pointer :: u10(:,:) 
+      real, pointer :: slp(:,:)
+      real, pointer :: t2(:,:)
+      real, pointer :: td2(:,:)
+      real, pointer :: u10(:,:)
       real, pointer :: v10(:,:)
       real, pointer :: etah(:)
       real, pointer :: etaf(:)
@@ -112,7 +112,7 @@ C$$$ compile with make maecalc (invokes Makefile)
 
       read*, ensnum
       read*, timesens
- 
+
       iunitres  = 9
       bhflag   = 0
       lhflag   = 1
@@ -138,7 +138,7 @@ C$$$ compile with make maecalc (invokes Makefile)
       iunitmod=33
       iunitout=44
       ppfile='wrfoutREF'
-   
+
       call set_domain_proj(ppfile, projt)
       call open_file(ppfile,permissr,iunitref)
       rcode = nf_get_att_int(iunitref, nf_global,
@@ -154,10 +154,10 @@ C$$$ compile with make maecalc (invokes Makefile)
       allocate(etah(mkx-1))
       allocate(etaf(mkx-1))
       allocate(gph300(mix-1,mjx-1))
-      allocate(gph500(mix-1,mjx-1))  
-      allocate(gph700(mix-1,mjx-1)) 
-      allocate(gph850(mix-1,mjx-1))  
-      allocate(t300(mix-1,mjx-1)) 
+      allocate(gph500(mix-1,mjx-1))
+      allocate(gph700(mix-1,mjx-1))
+      allocate(gph850(mix-1,mjx-1))
+      allocate(t300(mix-1,mjx-1))
       allocate(t500(mix-1,mjx-1))
       allocate(t700(mix-1,mjx-1))
       allocate(t850(mix-1,mjx-1))
@@ -168,16 +168,16 @@ C$$$ compile with make maecalc (invokes Makefile)
       allocate(u850(mix-1,mjx-1))
       allocate(u925(mix-1,mjx-1))
       allocate(v300(mix-1,mjx-1))
-      allocate(v500(mix-1,mjx-1))  
-      allocate(v700(mix-1,mjx-1)) 
-      allocate(v850(mix-1,mjx-1)) 
+      allocate(v500(mix-1,mjx-1))
+      allocate(v700(mix-1,mjx-1))
+      allocate(v850(mix-1,mjx-1))
       allocate(v925(mix-1,mjx-1))
       allocate(q850(mix-1,mjx-1))
-      allocate(slp(mix-1,mjx-1))   
+      allocate(slp(mix-1,mjx-1))
       allocate(t2(mix-1,mjx-1))
       allocate(td2(mix-1,mjx-1))
-      allocate(u10(mix-1,mjx-1)) 
-      allocate(v10(mix-1,mjx-1))     
+      allocate(u10(mix-1,mjx-1))
+      allocate(v10(mix-1,mjx-1))
       allocate(dat(2,2))
       allocate(ph(mix-1,mjx-1,mkx))
       allocate(phb(mix-1,mjx-1,mkx))
@@ -270,7 +270,7 @@ C$$$ Write netcdf file of sensitivity variables for user-specified time
 
         rcode = nf_def_dim(fidc, 'xdim', mix-1, xdim)
         rcode = nf_def_dim(fidc, 'ydim', mjx-1, ydim)
-        rcode = nf_def_dim(fidc, 'member', ensnum, mem)        
+        rcode = nf_def_dim(fidc, 'member', ensnum, mem)
 
         dims(1) = xdim
         dims(2) = ydim
@@ -282,7 +282,7 @@ C$$$ Write netcdf file of sensitivity variables for user-specified time
      &                 '300 hPa geopotential heights at senstime')
         rcode = nf_put_att_text(fidc, idgph300, 'units', 9, 'meters')
         rcode = nf_put_att_real(fidc,idgph300,'_FillValue',nf_float,1,
-     &                     fmiss)       
+     &                     fmiss)
 
         rcode = nf_def_var(fidc,'GPH_500',nf_float,
      &          3,dims,idgph500)
@@ -290,7 +290,7 @@ C$$$ Write netcdf file of sensitivity variables for user-specified time
      &                 '500 hPa geopotential heights at senstime')
         rcode = nf_put_att_text(fidc, idgph500, 'units', 9, 'meters')
         rcode = nf_put_att_real(fidc,idgph500,'_FillValue',nf_float,1,
-     &                     fmiss)  
+     &                     fmiss)
 
         rcode = nf_def_var(fidc,'GPH_700',nf_float,
      &          3,dims,idgph700)
@@ -530,7 +530,7 @@ c$$$  Destagger winds
       enddo
 
 c$$$  Transform perturbation theta to temp
- 
+
          do i=1,mix-1
             do j=1,mjx-1
                do k=1,mkx-1
@@ -550,7 +550,7 @@ c$$$  First calculate total geopotential
      &                       phb(i,j,k)
                enddo
             enddo
-         enddo    
+         enddo
 
 c$$$ Calculate geopotential height
 
@@ -560,7 +560,7 @@ c$$$ Get geopotential height on half levels
 
          do i=1,mix-1
             do j=1,mjx-1
-               call destag_zstag(etah, etaf, mkx-1, 
+               call destag_zstag(etah, etaf, mkx-1,
      &           gpheight(i,j,:),gpheighthalf(i,j,:))
             enddo
          enddo
@@ -787,7 +787,7 @@ c$$$ Now write out data
      &        mjx-1,m,v10)
 
          call close_file(fidc)
- 
+
 c        sensvec(:,:,m,1) = gph300(:,:)
 c	 sensvec(:,:,m,2) = gph500(:,:)
 c	 sensvec(:,:,m,3) = gph700(:,:)
@@ -816,8 +816,7 @@ c	 sensvec(:,:,m,25) = u10(:,:)
 c	 sensvec(:,:,m,26) = v10(:,:)
 
          print*, "Done with member ", m
-        
-         enddo
-         
-       end
 
+         enddo
+
+       end
