@@ -577,3 +577,53 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
     ob_hr_rbox_masked =  np.ma.masked_array(ob_hr_rbox, mask=rboxmask)
 
     return prob_bins, fcst_freq_all_masked, ob_hr_all_masked, fcst_freq_rbox_masked, ob_hr_rbox_masked
+
+
+def rmse(predictions, targets, axis=None, nan=False):
+    """
+    Root Mean Square Error (RMSE)
+
+    Calculate RMSE on grid or timeseries
+
+    Inputs
+    ------
+    predictions --- array, forecast variable array.
+    targets ------- array, observation variable array.
+    axis ---------- tuple, optional. Axes over which to perform calculation, If none, RMSE
+                    calculated for entire array shape.
+    nan ----------- bool, optional. Determines if nan values in inputs should result in
+                    nan output. Default is to ignore nan points.
+    Outputs
+    -------
+    Root Mean Square Error of predictions
+    """
+    if nan:
+        rmse_data = np.sqrt(np.mean(((predictions - targets) ** 2), axis=axis))
+    else:
+        rmse_data = np.sqrt(np.nanmean(((predictions - targets) ** 2), axis=axis))
+    return rmse_data
+
+
+def mse(predictions, targets, axis=None, nan=False):
+    """
+    Mean Square Error (MSE)
+
+    Calculate MSE on grid or timeseries
+
+    Inputs
+    ------
+    predictions --- array, forecast variable array.
+    targets ------- array, observation variable array.
+    axis ---------- tuple, optional. Axes over which to perform calculation, If none, RMSE
+                    calculated for entire array shape.
+    nan ----------- bool, optional. Determines if nan values in inputs should result in
+                    nan output. Default is to ignore nan points.
+    Outputs
+    -------
+    Mean Square Error of predictions
+    """
+    if nan:
+        mse_data = np.mean(((predictions - targets) ** 2), axis=axis)
+    else:
+        mse_data = np.nanmean(((predictions - targets) ** 2), axis=axis)
+    return mse_data
