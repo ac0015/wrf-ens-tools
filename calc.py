@@ -42,8 +42,8 @@ def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
 def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
                          wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'):
     '''
-    Calculates nearest neighbor of storm reports
-    valid over a 1-hr or 6-hr time frame with
+    Interpolates storm reports valid over a
+    1-hr or 6-hr time frame to the
     native TTU WRF grid. Returns the WRF grid
     in the form of binary hits and misses based
     on SPC storm report locations.
@@ -276,10 +276,30 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
 
     #Remove report CSV file
     os.remove(rptfile)
-    #print(sigma)
     print("Practically Perfect min/max: ", np.min(pperf), ' , ', np.max(pperf))
 
     return pperf, wrflon, wrflat
+
+def dist_mask(xind, yind, xpts, ypts, r):
+    '''
+    Calculates a mask that evaluates to true in locations
+    where gridpoints are within a given radius and false
+    in locations where gridpoints are outside the radius.
+
+    Inputs
+    ------
+    xind ------- the x-index of a gridpoint of interest
+    yind ------- the y-index of a gridpoint of interest
+    xpts ------- 2D mesh array of x-indices of which to evaluate distances
+    ypts ------- 2D mesh array of y-indices of which to evaluate distances
+    r ---------- desired radius (in number of grid pts)
+
+    Outputs
+    -------
+    returns a mask of shape xpts.shape that contains True's
+    where the grid is less than the given radius
+    '''
+    return (np.sqrt(((xind - xpts)**2) + ((yind - ypts)**2)) <= r)
 
 #############################################################
 # Begin verification metrics
@@ -413,7 +433,7 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
     return fss_all, fss_rbox, sig
 
 def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
-        thresh=25., rboxpath=None, sixhr=False, nbrhd=0.):
+                thresh=25., rboxpath=None, sixhr=False, nbrhd=0.):
     '''
     Calculates reliability for a probabilstic
     ensemble forecast and returns it. Obs
@@ -432,6 +452,9 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
                   [2]   UH > 40 m2/s2 probs
                   [3]   UH > 100 m2/s2 probs
                   [4]   Wind Speed > 40 mph probs
+    obpath ------ path to binary observations gridded to
+                  the native WRF domain. If set to None,
+                  will automatically calculate gridded obs.
     runinitdate - datetime obj describing model initiation
                   time. Used to pull correct storm reports.
     fhr --------- integer describing response time in number
@@ -447,13 +470,23 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
                   Wind Speed are 40 (dbz) and
                   40 (mph) respectively.
     rboxpath ---- optional path to sensitivity calc
-                  input file. Only needed if using
-                  FSS to verify subsets. Otherwise
+                  input file. Only needed if verifying
+                  subsets. Otherwise
                   leave as None.
+    sixhr ------- option of calculating 1 hours worth
+                  or 6 hours worth of SPC storm reports.
+                  If set to True, assuming probabilities are
+                  also valid over a 6-hour period.
+    nbrhd ------- neighborhood distance in km used with the
+                  probability calculations.
 
     Outputs
     -------
-    Returns
+    returns an array of probability bins, forecast frequencies for the total domain
+     of each bin, observation hit rates for each bin, forecast frequencies for the
+     response box for each bin, observation hit rates for the response box for each
+     bin (if not verifying subsets, will return arrays of zeros for the response box
+     metrics).
     '''
     prob_bins = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     # Open probabilistic forecast and observational datasets
@@ -482,6 +515,8 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
     lats = wrf.getvar(probdat, 'lat')
     lons = wrf.getvar(probdat, 'lon')
     dx = probdat.DX / 1000. # dx in km
+    # Get arrays of x and y indices for distance calculations
+    yinds, xinds = np.meshgrid(np.arange(len(lats[:])), np.arange(len(lons[0,:])))
 
     # Sort probabilities into bins
     fcstfreq_tot = np.zeros((len(prob_bins)))   # N probs falling into bin for whole domain
@@ -489,7 +524,7 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
     ob_hr_tot = np.zeros((len(prob_bins)))      # Ob hit rate for bin and whole domain
     ob_hr_rbox = np.zeros((len(prob_bins)))     # Ob hit rate for bin in rbox
 
-    # Mask rbox if applicable
+    # Create mask for isolating response box in grid if applicable
     if rboxpath is not None:
         sensin = np.genfromtxt(rboxpath, dtype=str)
         rbox = sensin[4:8]
@@ -501,30 +536,38 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
         masked_obs = grid[mask]
 
     for i in range(len(prob_bins)):
+        hits = 0
         prob = prob_bins[i]
-        print("Prob bin valid from {}% to {}%".format(prob-10, prob))
         fcstinds = np.where((np.abs(fcstprobs - prob) <= 10) & (fcstprobs < prob))
         fcstfreq_tot[i] = len(fcstinds[0])
         if fcstfreq_tot[i] == 0:
             ob_hr_tot[i] = 9e9
         else:
-            hits = np.sum(grid[(fcstinds-grid)])
-            tot = np.size(grid[fcstinds])
-            ob_hr_tot[i] = hits/tot
+            for fcstind in list(zip(fcstinds[0].ravel(), fcstinds[1].ravel())):
+                r = nbrhd/dx
+                mask = dist_mask(fcstind[1], fcstind[0], xinds, yinds, r)
+                masked_grid = np.ma.masked_array(grid, mask=~mask)
+                if (masked_grid == 1).any():
+                    hits += 1
+            ob_hr_tot[i] = hits / len(list(zip(fcstinds[0].ravel(),
+                                        fcstinds[1].ravel())))
             print("Total Hits/Tot: ", hits, tot)
+        # If verifying subsets, we want the reliability inside the response box
         if rboxpath is not None:
             fcstinds = np.where((np.abs(masked_probs - prob) <= 10) & (masked_probs < prob))
             fcstfreq_rbox[i] = len(fcstinds[0])
             if fcstfreq_rbox[i] == 0:
                 ob_hr_rbox[i] = 9e9
             else:
-                hits = np.sum(masked_obs[fcstinds])
-                tot = np.size(masked_probs[fcstinds])
-                ob_hr_rbox[i] = hits/tot
+                for fcstind in list(zip(fcstinds[0].ravel(), fcstinds[1].ravel())):
+                    r = nbrhd/dx
+                    mask = dist_mask(fcstind[1], fcstind[0], xinds, yinds, r)
+                    masked_grid = np.ma.masked_array(grid, mask=~mask)
+                    if (masked_grid == 1).any():
+                        hits += 1
+                ob_hr_tot[i] = hits / len(list(zip(fcstinds[0].ravel(),
+                                            fcstinds[1].ravel())))
                 print("Rbox Hits/Total: ", hits, tot)
-        else:
-            fcstfreq_rbox[i] = 9e9
-            ob_hr_rbox[i] = 9e9
 
     totmask = (ob_hr_tot == 9e9)
     rboxmask = (ob_hr_rbox == 9e9)
