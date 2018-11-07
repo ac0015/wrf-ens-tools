@@ -3,7 +3,7 @@ from netCDF4 import Dataset
 from cartopy import crs as ccrs
 from cartopy import feature as cfeat
 from matplotlib import pyplot as plt
-import coordinateSystems as cs
+from wrf_ens_tools.calc import coordinateSystems as cs
 from scipy import interpolate
 from siphon import ncss
 import subprocess

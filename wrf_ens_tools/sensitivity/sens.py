@@ -9,7 +9,7 @@ import numpy as np
 import os
 from datetime import datetime
 from datetime import timedelta
-from interp_analysis import subprocess_cmd, fromDatetime
+from wrf_ens_tools.post.interp_analysis import subprocess_cmd, fromDatetime
 
 package_dir = os.path.dirname(os.path.abspath(__file__))
 

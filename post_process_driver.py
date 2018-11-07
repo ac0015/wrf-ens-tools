@@ -7,8 +7,8 @@ Created on Tue Aug  7 19:21:54 2018
 """
 
 from datetime import datetime, timedelta
-from sens import Sens
-from subset import Subset
+from wrf_ens_tools.sensitivity.sens import Sens
+from wrf_ens_tools.sensitivity.subset import Subset
 import os
 import sys
 
@@ -44,7 +44,7 @@ analysis = ["WRF", "RAP"]
 analysis_fhr = 0
 ########################################################################
 
-import post_process as post
+from wrf_ens_tools.post import post_process as post
 
 # Move response box and time choices to correct directory
 try:

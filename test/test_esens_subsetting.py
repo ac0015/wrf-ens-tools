@@ -1,5 +1,4 @@
-import pytest
-import esens_subsetting
+from wrf_ens_tools.sensitivity import esens_subsetting
 import numpy as np
 from netCDF4 import Dataset
 
@@ -73,7 +72,6 @@ def test_point():
     """
     mask, maxval = esens_subsetting.point(sens_field)
     assert(sens_field[mask == False] == np.max(np.absolute(sens_field)))
-    return
 
 def test_ensSubset():
     """
@@ -83,9 +81,9 @@ def test_ensSubset():
     """
     # Attempt with projection method (method=2)
     submems, sensstrings = esens_subsetting.ensSubset(wrfsensfile=senspath,
-                                analysis=analysispath, newensnum=3,
-                                memvalsfile=memvalspath, fullensnum=ensnum,
-                                sensvars=[sensvar], method=2, sens_thresh=0.0)
+                                                      analysis=analysispath, newensnum=3,
+                                                      memvalsfile=memvalspath, fullensnum=ensnum,
+                                                      sensvars=[sensvar], method=2, sens_thresh=0.0)
     print("Subset members in order of increasing error: {} \nSensitivity variables used: {}".format(submems,
             sensstrings))
     # We know that member 5 has the lowest errors over the whole domain,
@@ -96,9 +94,7 @@ def test_ensSubset():
     # Attempt with RMS technique (method=3) and show the same member is
     #  produced even with a nonzero sensitivity threshold.
     submems, sensstrings = esens_subsetting.ensSubset(wrfsensfile=senspath,
-                                    analysis=analysispath, newensnum=3,
-                                    memvalsfile=memvalspath, fullensnum=ensnum,
-                                    sensvars=[sensvar], method=3, sens_thresh=0.8)
+                                                      analysis=analysispath, newensnum=3,
+                                                      memvalsfile=memvalspath, fullensnum=ensnum,
+                                                      sensvars=[sensvar], method=3, sens_thresh=0.8)
     assert(submems[0] == 5)
-
-    return

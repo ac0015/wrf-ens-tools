@@ -8,15 +8,18 @@ Created on Thu Feb  8 10:11:46 2018
 import numpy as np
 import os, csv, subprocess
 from datetime import timedelta
-from sens import Sens
-from esens_subsetting import ensSubset
-from interp_analysis import fromDatetime, interpRAPtoWRF, subprocess_cmd
-import research_plotting
+from wrf_ens_tools.sensitivity.sens import Sens
+from wrf_ens_tools.sensitivity.esens_subsetting import ensSubset
+from wrf_ens_tools.post.interp_analysis import fromDatetime, interpRAPtoWRF, subprocess_cmd
+from wrf_ens_tools.plots import plotting
 from netCDF4 import Dataset
-from calc import FSS, Reliability
-from post_process import gen_dict, process_wrf, postTTUWRFanalysis
+from wrf_ens_tools.calc import FSS, Reliability
+from wrf_ens_tools.post.post_process import process_wrf
 
 package_dir = os.path.dirname(os.path.abspath(__file__))
+
+
+
 
 #################
 # Subset class
@@ -118,8 +121,14 @@ class Subset:
         self._dx = Dataset(sens.getRefFileD2()).DX
 
     def __str__(self):
-        return "Subset object with full ensemble of {} members, subset size of {}, and using the {} subsetting method with a threshold of {}, neighborhood of {}, response threshold of {} and these sensitivity variables: {}. Using {} analysis for subsetting. Based on Sens object: \n {}".format(self._sens.getEnsnum(),
-                                                    self._subsize, self._method, str(self._percent), str(self._nbr), str(self._thresh), ','.join(self.getSensVars()), str(self._analysis), str(self.getSens()))
+        return "Subset object with full ensemble of {} members, subset size of {}, and " \
+               "using the {} subsetting method with a threshold of {}, neighborhood of {}, " \
+               "response threshold of {} and these sensitivity variables: {}. Using {} " \
+               "analysis for subsetting. Based on Sens object: \n {}".format(self._sens.getEnsnum(),
+                                                    self._subsize, self._method, str(self._percent),
+                                                    str(self._nbr), str(self._thresh),
+                                                    ','.join(self.getSensVars()),
+                                                    str(self._analysis), str(self.getSens()))
 
     def setSubsetMethod(self, subset_method):
         """
@@ -524,9 +533,10 @@ class Subset:
         else:
             path = fullenspath
         wrfrefpath = S.getRefFileD2()
-        research_plotting.plotProbs(path, wrfrefpath,
-                                    S.getRbox(), S.getRTime(), self._nbr, outpath=direc,
-                                    subset=use_subset)
+
+        plotting.plotProbs(path, wrfrefpath,
+                           S.getRbox(), S.getRTime(), self._nbr, outpath=direc,
+                           subset=use_subset)
         return
 
     def researchPlotDiffs(self, verif_day=False):
@@ -547,9 +557,9 @@ class Subset:
         date = S.getRunInit()
         SPCdate = str(date)[2:10].replace('-','')
 
-        research_plotting.plotDiff(fullenspath, subsetpath, wrfrefpath,
-                                   S.getRbox(), S.getRTime(), SPCdate,
-                                   stormreports=verif_day)
+        plotting.plotDiff(fullenspath, subsetpath, wrfrefpath,
+                          S.getRbox(), S.getRTime(), SPCdate,
+                          stormreports=verif_day)
         return
 
     def plotSixPanels(self, storm_reports=True):
@@ -558,12 +568,10 @@ class Subset:
         yr, mo, day, hr = fromDatetime(S.getRunInit(), interp=False)
         rfunclabel = S.getRString().replace(' ','').lower()
         dirdate = str(yr) + str(mo) + str(day) + str(hr)
-        research_plotting.plotSixPanels(dirdate, storm_reports,
-                                        self.getSubMembers(),
-                                        sixhour=S.getSixHour(),
-                                        time=S.getRTime(),
-                                        subsettype=rfunclabel,
-                                        nbrhd=self._nbr)
+        plotting.plotSixPanels(dirdate, storm_reports,
+                               self.getSubMembers(), sixhour=False,
+                               time=S.getRTime(), subsettype=rfunclabel,
+                               nbrhd=self._nbr)
         return
 
     # def storePracPerf(self, pperfpath, sigma=2):

@@ -19,18 +19,18 @@ import numpy as np
 from netCDF4 import Dataset
 from cartopy import crs as ccrs
 from cartopy import feature as cfeat
-import nclcmaps
 from matplotlib import pyplot as plt
+#from matplotlib.mlab import griddata
+#from interp_analysis import bilinear_interp
+import wrf_ens_tools.plots.nclcmaps as nclcmaps
 import matplotlib.patches as patches
 from matplotlib.colors import LinearSegmentedColormap
 from datetime import timedelta, datetime
 from copy import copy
-import coordinateSystems as cs
 import pyproj
 import scipy as sp
 from scipy import ndimage
 from subprocess import call
-import cmocean
 from scipy.ndimage.filters import gaussian_filter
 
 # For building module-relative paths
@@ -1158,7 +1158,7 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
             sublevs = mems[inds]
             #sublevs = np.linspace(0, np.max(mems[inds]), len(mems[inds]) + 1)
             if len(sublevs) < 2:
-                raise
+                raise ValueError("Not enough members in subset")
             for j in range(len(fullensrange)):
                 if np.max(fullpaintball[j]) >= flevs[0]:
                     fpaint = ax5.contourf(lons, lats, fullpaintball[j],

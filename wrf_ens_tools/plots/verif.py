@@ -10,11 +10,12 @@ import numpy as np
 import os
 from datetime import timedelta
 from wrf_ens_tools.calc import FSS, Reliability
-from subset import Subset
-import nclcmaps
 import cartopy.crs as ccrs
 import cartopy.feature as cfeat
-import cmocean
+# import cmocean
+from wrf_ens_tools.sensitivity.subset import Subset
+from wrf_ens_tools.plots.nclcmaps import *
+
 
 def storeEnsStats(ensprobpath, obpath, reliabilityobpath,
                   outpath, runinit, fhr,

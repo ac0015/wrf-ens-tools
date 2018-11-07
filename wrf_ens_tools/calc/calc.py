@@ -340,7 +340,7 @@ def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2):
             ct = ct+1
 
     # Get lats and lons for practically perfect grid
-    ppfile = '/lustre/work/aucolema/scripts/pperf_grid_template.npz'
+    ppfile = 'pperf_grid_template.npz'
     f = np.load(ppfile)
     lon = f["lon"]
     lat = f["lat"]

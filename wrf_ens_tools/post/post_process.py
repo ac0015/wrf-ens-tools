@@ -16,7 +16,7 @@ import numpy as np
 import wrf
 from netCDF4 import Dataset
 from datetime import timedelta
-from calc import calc_prac_perf_native_grid, calc_prac_perf_spc_grid, nearest_neighbor_spc
+from ..calc import calc_prac_perf_spc_grid, nearest_neighbor_spc
 import os
 
 dflt_var = ['td2', 'T2']
