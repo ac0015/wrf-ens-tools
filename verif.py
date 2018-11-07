@@ -9,7 +9,7 @@ from netCDF4 import Dataset
 import numpy as np
 import os
 from datetime import timedelta
-from calc import FSS, Reliability
+from wrf_ens_tools.calc import FSS, Reliability
 from subset import Subset
 import nclcmaps
 import cartopy.crs as ccrs
