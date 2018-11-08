@@ -306,7 +306,7 @@ def dist_mask(xind, yind, xpts, ypts, r):
 #############################################################
 
 def FSS(probpath, obspath, fhr, var='updraft_helicity',
-        thresh=25., rboxpath=None):
+        thresh=25., rboxpath=None, prob_var='P_HYD'):
     '''
     Calculates fractional skill score for a probabilstic
     ensemble forecast, Obs need to be pre-interpolated
@@ -344,6 +344,11 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
                 input file. Only needed if using
                 FSS to verify subsets. Otherwise
                 leave as None.
+    prob_var - name of netCDF variable in which
+                probabilities are stored (as string).
+                If using probability calculations from
+                this library, probabilities will by default
+                be stored in 'P_HYD'.
 
     Outputs
     -------
