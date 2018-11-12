@@ -332,7 +332,7 @@ def plotUHFSS(ncfilepaths, xvarname,
     return
 
 def storeUHStatsCSV(outpath, probpath, pperfpath, reliabilityobpath,
-                    verif_fhrs, nbrhd, probthresh, probvar='P_HYD'):
+                    verif_fhr, nbrhd, probthresh, probvar='P_HYD'):
     """
     Stores UH verification stats to csv file.
 
@@ -343,7 +343,7 @@ def storeUHStatsCSV(outpath, probpath, pperfpath, reliabilityobpath,
                         gridded data
     reliabilityobpath - absolute filepath for reliability observational
                         point data on ensemble grid
-    verif_fhrs -------- forecast hour to verify (e.g. 24 to verify
+    verif_fhr -------- forecast hour to verify (e.g. 24 to verify
                         UH between forecast hours 23 and 24)
     nbrhd ------------- neighborhood distance in km
     probthresh -------- probability threshold (e.g. UH > 25 m2/s2)
@@ -362,10 +362,11 @@ def storeUHStatsCSV(outpath, probpath, pperfpath, reliabilityobpath,
     ######## Get correct format string when quanah returns #############
     runinit = datetime(probdat.START_DATE)
     veriftime = runinit + timedelta(hours=verif_fhrs)
+    var = 'updraft_helicity'
     if os.path.exists(pperfpath):
-        fens_fss = FSS(probpath, pperfpath, veriftime, var='updraft_helicity',
+        fens_fss = FSS(probpath, pperfpath, veriftime, var=,
                   thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
-        fens_reliability = Reliability(probpath, runinit, verif_fhrs,
+        fens_reliability = Reliability(probpath, runinit, verif_fhr,
                                        obpath=reliabilityobpath, var='updraft_helicity',
                                        thresh=probthresh, rboxpath=None,
                                        sixhr=False, nbrhd=nbrhd)
@@ -386,20 +387,13 @@ def storeUHStatsCSV(outpath, probpath, pperfpath, reliabilityobpath,
             cols = ['Run_Init', 'Response_Func',
                     'Response_Time', 'Full_Ens_FSS_Total',
                     'Prac_Perf_Sigma', 'Neighborhood',
-                    'Response_Thresh', 'Full_Ens_Reliability_Total',
-                    'Full_Ens_Reliability_Rbox']
+                    'Response_Thresh', 'Full_Ens_Reliability_Total']
             outfile_writer = csv.writer(outfile, delimiter=',')
             outfile_writer.writerow(cols)
-        # TO-DO: FIX ENTRIES FOR NON-SUBSETTING STUFF
-        # Add row valid for current subset
-        entry = [str(S.getRunInit()), S.getSensTime(), self._analysis_type,
-                 self._sensvars, self._subsize, list(self._methodchoices.keys())[self._method-1]],
-                 self._percent, S.getRString(), S.getRTime(), S.getRbox(),
-                 self._thresh, f_fss_tot, f_fss_rbox, s_fss_tot, s_fss_rbox,
-                 sig, self._nbr, (prob_bins, f_fcstfreq_tot, f_ob_hr_tot),
-                 (prob_bins, f_fcstfreq_rbox, f_ob_hr_rbox),
-                 (prob_bins, s_fcstfreq_tot, s_ob_hr_tot),
-                 (prob_bins, s_fcstfreq_rbox, s_ob_hr_rbox)]
+        # Add row valid for current ensemble
+        entry = [runinit, var, verif_fhr, f_fss_tot, sig,
+                self._nbr, (prob_bins, f_fcstfreq_tot, f_ob_hr_tot),
+                 (prob_bins, f_fcstfreq_rbox, f_ob_hr_rbox)]
         outfile_writer = csv.writer(outfile, delimiter=',')
         outfile_writer.writerow(entry)
 
@@ -409,7 +403,15 @@ def plotHistUHFSS(statspaths, outpath, xvarname='Subset_Size'):
     '''
     pass
 
-def plotReliability(statspaths, outpath, subset=False, subgroupby="Sens_Vars",
+def plotReliabilityfromCSV(statspaths, outpath, subset=False, subgroupby="Sens_Vars",
+                    sigmas=[0,1,2], uhthresholds=[25., 40., 100.], nbrs=[30, 45, 60],
+                    senstimes=[6,12], subsize=10):
+    '''
+    Plot reliability diagram from csv files.
+    '''
+    # TO-DO: Add plotting functions from csv
+
+def plotReliabilityfromNETCDF(statspaths, outpath, subset=False, subgroupby="Sens_Vars",
                     sigmas=[0,1,2], uhthresholds=[25., 40., 100.], nbrs=[30, 45, 60],
                     senstimes=[6,12], subsize=10):
     '''
