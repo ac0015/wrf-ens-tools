@@ -386,8 +386,8 @@ def storePracPerf(modelinit, fcsthrs, outpath, sigma=2):
     netcdf_out.close()
     return
 
-# Post-process nearest neighbor of SPC reports (for reliability)
-def storeNearestNeighbor(modelinit, fcsthrs, outpath, nbrhd):
+# Interpolate storm reports to nearest grid point
+def storeNearestNeighbor(modelinit, fcsthrs, outpath):
     '''
     Calculate hourly nearest neighbor on WRF grid.
     Save to netCDF file for verification.
@@ -403,8 +403,6 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, nbrhd):
                 hours since modelinit time.
     outpath --- string specifying absolute path of
                 netCDF output.
-    nbrhd ----- float specifying desired neighborhood
-                value in km
 
     Outputs
     -------
@@ -413,20 +411,18 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, nbrhd):
     # Create outfile
     netcdf_out = Dataset(outpath, 'w')
     # Calculate pperf to pull lat/lon data
-    grid = nearest_neighbor_spc(modelinit, False, fcsthrs[0], nbrhd=nbrhd)
+    grid = nearest_neighbor_spc(modelinit, False, fcsthrs[0], nbrhd=0)
     # Set up netCDF
     netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
     netcdf_out.createDimension('Time', len(fcsthrs))
     netcdf_out.createDimension('south_north', len(grid[:,0]))
     netcdf_out.createDimension('west_east', len(grid[0,:]))
-    netcdf_out.createDimension('nbrhd', 1)
     times = netcdf_out.createVariable('fhr', int, ('Time'))
-    nbr = netcdf_out.createVariable('neighbor', int, ('nbrhd'))
     nearest_out = netcdf_out.createVariable('nearest_neighbor', float, ('Time', 'south_north', 'west_east'))
-    nbr[:] = nbrhd
     # Populate outfile with pperf
     for t in range(len(fcsthrs)):
-        grid = nearest_neighbor_spc(modelinit, False, fcsthrs[t], nbrhd=nbrhd)
+        
+        grid = nearest_neighbor_spc(modelinit, False, fcsthrs[t], nbrhd=0)
         nearest_out[t] = grid[:]
         times[t] = fcsthrs[t]
     netcdf_out.close()

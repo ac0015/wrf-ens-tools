@@ -56,7 +56,7 @@ for senstime in sens_times:
     S = Sens(infile=True, gui=True, run=init, 
              senstime=senstime)
     print('Using sens obj:', str(S))
-    S.runAll()
+    #S.runAll()
     # Calculate Full Ensemble probs and Practically Perfect probs
     rtime = S.getRTime()
     rdate = init + timedelta(hours=rtime)
@@ -64,9 +64,9 @@ for senstime in sens_times:
     # Calculate practically perfect w different sigma vals
     for sig in sigma:
         outpath = direc + 'sigma{}_pperf.nc'.format(sig)
+        pperfpaths.append(outpath)
         if os.path.exists(outpath):
            os.popen('rm {}'.format(outpath))
-        pperfpaths.append(outpath)
         post.storePracPerf(init, [rtime], 
                            outpath, sigma=sig)
     # Calculate full ensemble probs and reliability obs
@@ -78,12 +78,12 @@ for senstime in sens_times:
         if os.path.exists(outpath):
            os.popen('rm {}'.format(outpath))
         post.storeNearestNeighbor(init, [rtime], 
-                                  outpath, nbrhd=nbr)
+                                  outpath)
     
     if os.path.exists(sub._analysis) == False:
         sub.interpRAP()
     del sub
-    statspath = direc + 'stats_reduced.nc'
+    statspath = direc + 'stats_sig1_nbr30.csv'
     # Get stats for different subset combos
     for subsize in subset_sizes:
         for method in subset_methods:
@@ -100,7 +100,7 @@ for senstime in sens_times:
                             #sub.plotSixPanels()
                             reliabilityobpath = direc + 'reliability_ob_nbr{}.nc'.format(int(nbr))
                             for obpath in pperfpaths:
-                                sub.storeUHStats(outpath=statspath,pperfpath=obpath, 
+                                sub.storeUHStatsCSV(outpath=statspath,pperfpath=obpath, 
                                                  reliabilityobpath=reliabilityobpath)
                             del sub
                 

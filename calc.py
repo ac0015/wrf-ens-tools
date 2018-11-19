@@ -181,7 +181,7 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     print('Pullng SPC reports from ', runinitdatef)
     print('Response time ', rdate)
 
-    #Get yesterday's reports CSV file from web
+    #Get report CSV file from web
     rptfile = runinitdatef+'_rpts_filtered.csv'
     add = 'www.spc.noaa.gov/climo/reports/'+rptfile
     call(['wget',add])
@@ -493,6 +493,7 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
      bin (if not verifying subsets, will return arrays of zeros for the response box
      metrics).
     '''
+    print('Starting reliability calculations...')
     prob_bins = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     # Open probabilistic forecast and observational datasets
     probdat = Dataset(probpath)
@@ -538,7 +539,6 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
         latmask = (lats > llat) & (lats < ulat)
         mask = lonmask & latmask
         masked_probs = fcstprobs[mask]
-        masked_obs = grid[mask]
 
     for i in range(len(prob_bins)):
         hits = 0
@@ -554,8 +554,9 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
                 masked_grid = np.ma.masked_array(grid, mask=~mask)
                 if (masked_grid == 1).any():
                     hits += 1
-            ob_hr_tot[i] = hits / len(list(zip(fcstinds[0].ravel(),
+            tot =  len(list(zip(fcstinds[0].ravel(),
                                         fcstinds[1].ravel())))
+            ob_hr_tot[i] = hits / tot
             print("Total Hits/Tot: ", hits, tot)
         # If verifying subsets, we want the reliability inside the response box
         if rboxpath is not None:
@@ -570,8 +571,9 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
                     masked_grid = np.ma.masked_array(grid, mask=~mask)
                     if (masked_grid == 1).any():
                         hits += 1
-                ob_hr_tot[i] = hits / len(list(zip(fcstinds[0].ravel(),
+                tot = len(list(zip(fcstinds[0].ravel(),
                                             fcstinds[1].ravel())))
+                ob_hr_tot[i] = hits / tot
                 print("Rbox Hits/Total: ", hits, tot)
 
     totmask = (ob_hr_tot == 9e9)
