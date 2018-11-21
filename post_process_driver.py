@@ -15,6 +15,7 @@ import sys
 ################### EXPERIMENT SETUP ####################################
 direc = str(sys.argv[1])
 date = str(sys.argv[2])
+sixhour=True
 yr, mo, day, hr = int(date[:4]), int(date[4:6]), int(date[6:8]), int(date[8:])
 print(yr, mo, day, hr)
 init = datetime(yr, mo, day, hr)
@@ -54,23 +55,27 @@ except:
 for senstime in sens_times:    
     # Create Sens object    
     S = Sens(infile=True, gui=True, run=init, 
-             senstime=senstime)
+             senstime=senstime, sixhr=sixhour)
     print('Using sens obj:', str(S))
-    #S.runAll()
+    S.runAll()
     # Calculate Full Ensemble probs and Practically Perfect probs
     rtime = S.getRTime()
     rdate = init + timedelta(hours=rtime)
     pperfpaths = []
     # Calculate practically perfect w different sigma vals
     for sig in sigma:
-        outpath = direc + 'sigma{}_pperf.nc'.format(sig)
+        if sixhour:
+            outpath = direc + 'sixhr_sigma{}_pperf.nc'.format(sig)
+        else:
+            outpath = direc + 'sigma{}_pperf.nc'.format(sig)
         pperfpaths.append(outpath)
         if os.path.exists(outpath):
            os.popen('rm {}'.format(outpath))
         post.storePracPerf(init, [rtime], 
-                           outpath, sigma=sig)
+                           outpath, sixhour=sixhour, sigma=sig)
     # Calculate full ensemble probs and reliability obs
     # Using neighborhood for reliability obs
+    # TO-DO:Convert reliability to allow for six hour time frames
     for nbr in nbrs:
         sub = Subset(S, nbrhd=nbr)
         sub.calcProbs(sub._fullens)
@@ -83,7 +88,10 @@ for senstime in sens_times:
     if os.path.exists(sub._analysis) == False:
         sub.interpRAP()
     del sub
-    statspath = direc + 'stats_sig1_nbr30.csv'
+    if sixhour:
+        statspath = direc + 'sixhr_stats_sig1_nbr30.csv'
+    else:
+        statspath = direc + 'stats_sig1_nbr30.csv'
     # Get stats for different subset combos
     for subsize in subset_sizes:
         for method in subset_methods:
@@ -93,7 +101,8 @@ for senstime in sens_times:
                         for thresh in uh_thresh:
                             # Create Subset object
                             sub = Subset(S, subset_size=subsize, subset_method=method,
-                                         percent=percent, sensvars=varlist, nbrhd=nbr, thresh=thresh)
+                                         percent=percent, sensvars=varlist, 
+                                         nbrhd=nbr, thresh=thresh)
                             print('Using subset obj:', str(sub))
                             sub.calcSubset()
                             sub.calcProbs(sub.getSubMembers())

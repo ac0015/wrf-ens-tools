@@ -364,8 +364,8 @@ def storeUHStatsCSV(outpath, probpath, pperfpath, reliabilityobpath,
     veriftime = runinit + timedelta(hours=verif_fhrs)
     var = 'updraft_helicity'
     if os.path.exists(pperfpath):
-        fens_fss = FSS(probpath, pperfpath, veriftime, var=,
-                  thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
+        fens_fss = FSS(probpath, pperfpath, veriftime, var=probvar,
+                  thresh=probthresh, rboxpath=S.getDir()+'esens.in')
         fens_reliability = Reliability(probpath, runinit, verif_fhr,
                                        obpath=reliabilityobpath, var='updraft_helicity',
                                        thresh=probthresh, rboxpath=None,

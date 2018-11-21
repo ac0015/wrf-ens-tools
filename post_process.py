@@ -343,7 +343,7 @@ def process_wrf(inpaths, outpath, reduced=True,
         return
 
 # Post-process practically perfect
-def storePracPerf(modelinit, fcsthrs, outpath, sigma=2):
+def storePracPerf(modelinit, fcsthrs, outpath, sixhour=False, sigma=2):
     '''
     Calculate hourly practically perfect on WRF grid.
     Save to netCDF file for verification.
@@ -357,6 +357,9 @@ def storePracPerf(modelinit, fcsthrs, outpath, sigma=2):
                 forecast hours to.)
     fsthrs ---- list of forecast hour integers, or
                 hours since modelinit time.
+    sixhour --- boolean describing whether to store
+                practically perfect probs in six-hour or
+                one-hour increments. Defaults to one hour.
     outpath --- string specifying absolute path of
                 netCDF output.
 
@@ -367,7 +370,7 @@ def storePracPerf(modelinit, fcsthrs, outpath, sigma=2):
     # Create outfile
     netcdf_out = Dataset(outpath, 'w')
     # Calculate pperf to pull lat/lon data
-    pperf, lon, lat = calc_prac_perf(modelinit, False, fcsthrs[0], sigma=sigma)
+    pperf, lon, lat = calc_prac_perf(modelinit, sixhour, fcsthrs[0], sigma=sigma)
     # Set up netCDF
     netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
     netcdf_out.createDimension('Time', len(fcsthrs))

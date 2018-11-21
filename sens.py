@@ -15,23 +15,23 @@ from interp_analysis import subprocess_cmd, fromDatetime
 # Sens class
 #################
 class Sens:
-    '''
+    """
     The Sens class encapsulates the information pertaining to
     a forecast ensemble, response function, response function
     box, sensitivity time, and response time for running a
     sensitivity code package and producing a sensitivity
     object to be used by other applications.
-    '''
+    """
     def __init__(self, infile=False, gui=False, ensbasepath=None,
                  llat=31.578, ulat=35.578, llon=-105.855, ulon=-98.855,
-                 rfuncstr="Max 1h UH", senstime=6, rtime=24, run=None,
+                 rfuncstr="Max UH", sixhr=False, senstime=6, rtime=24, run=None,
                  submit=datetime.utcnow()):
-        '''
+        """
         Constructor for an instance of the Sens class. Defaults to
         a response function box centered around Lubbock, TX with
         the Max UH as the response and most recent ensemble to
         calculate sensitivity.
-        '''
+        """
         # Set run initialization time
         if run == None:
             # If no run is provided, use previous real-time run
@@ -65,7 +65,12 @@ class Sens:
                 self._ulat = float(esens_in[4])
                 self._ensnum = 42
                 self._senstime = senstime
-                self._rfuncstr = rfuncstr
+                if sixhr:
+                    self._sixhr = True
+                    self._rfuncstr = "6-hr " + rfuncstr
+                else:
+                    self._sixhr = False
+                    self._rfuncstr = "1-hr " + rfuncstr
             else:
                 esens_in = np.genfromtxt(self._dir + 'esens.in', dtype=str)
                 self._ensnum = int(esens_in[0])
@@ -76,12 +81,18 @@ class Sens:
                 self._ulon = float(esens_in[5])
                 self._llat = float(esens_in[6])
                 self._ulat = float(esens_in[7])
+        # If not, use user-specified inputs
         else:
             self._llat = llat
             self._ulat = ulat
             self._llon = llon
             self._ulon = ulon
-            self._rfuncstr = rfuncstr
+            if sixhr:
+                self._sixhr = True
+                self._rfuncstr = "6-hr " + rfuncstr
+            else:
+                self._sixhr = False
+                self._rfuncstr = "1-hr " + rfuncstr
             self._rtime = int(rtime)
             # TO-DO: Decide how/if these should be chosen
             self._ensnum = 42
@@ -105,10 +116,10 @@ class Sens:
         self._rfuncstr, self._rtime)
 
     def setDir(self, dirpath):
-        '''
+        """
         Set base directory from which sensitivity code
         will run.
-        '''
+        """
         try:
             if os.path.exists(dirpath):
                 self._dir = dirpath
@@ -119,129 +130,147 @@ class Sens:
         return
 
     def setInfile(self, absinfilepath):
-        '''
+        """
         Set the absolute path of the input file supplied to the
         sensitivity code.
-        '''
+        """
         self._sensin = absinfilepath
         return
 
     def setRefFileD1(self, absrefpathd1):
-        '''
+        """
         Set the WRF reference file path for the outer domain.
-        '''
+        """
         self._wrfrefd1 = absrefpathd1
         return
 
     def setRefFileD2(self, absrefpathd2):
-        '''
+        """
         Set the WRF reference file path for the inner domain.
         Also resets grid-spacing parameter.
-        '''
+        """
         self._wrfrefd2 = absrefpathd2
         return
 
     def setRFunc(self, index):
-        '''
+        """
         Set response function with an index.
-        '''
+        """
         rfuncstrs = {1 : "Avg Refl", 2 : "Max Refl",
                      3 : "Avg 1h UH", 4 : "Max 1h UH",
                      5 : "Accum PCP", 6 : "Avg Wind Spd"}
         self._rfuncstr = rfuncstrs[index]
+        
+    def setSixHour(self, sixhr):
+        """
+        Set six hour boolean indicating whether to calculate
+        the sensitivity for a one hour or six hour response 
+        function. If you've already run any sensitivity code,
+        you will need to rerun it after changing this boolean.
+        """
+        self._sixhr = sixhr
 
     def getRIndex(self):
-        '''
+        """
         Returns the integer corresponding to the response function
         string provided to the constructor for use with the sensitivity
         code. These strings are specific to those used in the subset GUI.
-        '''
-        rfuncinds = {"Avg Refl" : 1, "Max Refl" : 2,
-                     "Avg 1h UH" : 3, "Max 1h UH" : 4,
+        """
+        rfuncinds = {"Avg Refl" : 1, "1-hr Max Refl" : 2, "6-hr Max Refl" : 2,
+                     "1-hr Avg UH" : 3, "1-hr Max UH" : 4,
+                     "6-hr Avg UH" : 3, "6-hr Max UH" : 4, 
                      "Accum PCP" : 5, "Avg Wind Spd" : 6}
         return rfuncinds[self._rfuncstr]
 
 
     def getRString(self):
-        '''
+        """
         Returns response function string
-        '''
+        """
         return self._rfuncstr
 
     def getRunInit(self):
-        '''
+        """
         Returns the initialization time of ensemble run as a datetime
         object.
-        '''
+        """
         return self._run
 
     def getSensTime(self):
-        '''
+        """
         Returns the sensitivity time as an integer of n forecast hrs
         from the run's initialization.
-        '''
+        """
         return self._senstime
 
     def getRTime(self):
-        '''
+        """
         Returns the response function time as an integer of n forecast
         hours from the run's initialization.
-        '''
+        """
         return self._rtime
 
     def getEnsnum(self):
-        '''
+        """
         Returns ensemble size as an integer.
-        '''
+        """
         return self._ensnum
 
     def getDir(self):
-        '''
+        """
         Returns base directory for ensemble run as a string.
-        '''
+        """
         return self._dir
 
     def getRbox(self):
-        '''
+        """
         Returns the response function box bounds as a tuple
         containing lower latitude, upper latitude, lower longitude,
         and upper longitude respectively.
-        '''
+        """
         return self._llon, self._ulon, self._llat, self._ulat
 
     def getInfile(self):
-        '''
+        """
         Returns the input file path provided to the sensitivity code.
-        '''
+        """
         return self._sensin
 
     def getRefFileD1(self):
-        '''
+        """
         Returns the WRF outer domain reference file path as a string.
-        '''
+        """
         return self._wrfrefd1
 
     def getRefFileD2(self):
-        '''
+        """
         Returns the WRF inner domain reference file path as a string.
-        '''
+        """
         return self._wrfrefd2
 
     def getWRFSensFile(self):
-        '''
+        """
         Returns the WRF sens file used by the Fortran sensitivity
         code. This is hardcoded in the Fortran, so only change
         if the Fortran naming conventions are changed.
-        '''
+        """
         return self._wrfsens
+    
+    def getSixHour(self):
+        """
+        Returns the boolean indicating whether response function
+        is over a one hour or six hour time frame. If false,
+        assume six hours.
+        """
+        return self._sixhr
 
     def createInfile(self, rvals=True):
-        '''
+        """
         Creates (or overwrites if it already exists) an input file for
         the sensitivity code to use. If rvals is true in infile,
         sensitivity code will write response function values for each
         member to netCDF in 'Rvals.nc'.
-        '''
+        """
         fpath = self._sensin
         if os.path.isfile(fpath):
             os.remove(fpath)
@@ -255,7 +284,7 @@ class Sens:
         return
 
     def renameWRFOUT(self, restored=False):
-        '''
+        """
         Renames wrfout files for current ensemble run
 
         Inputs
@@ -263,7 +292,7 @@ class Sens:
         restored - optional boolean specifying if wrfout files
                     are restored to their full capacity
 
-        '''
+        """
         for i in range(self._ensnum):
             subdir = self._dir + "mem" + str(i+1) + "/"
             for t in range(self._fhrs + 1):
@@ -301,11 +330,11 @@ class Sens:
         return
 
     def runMeanCalc(self):
-        '''
+        """
         Runs the fortran program 'meancalcSENS' to calculate
         and store means of sensitivity variables for use with
         sensitivity code.
-        '''
+        """
         os.chdir(self._dir)
         tmpmem = "mem1/SENS1_0.out"
         tmpRmem = "mem1/R1_0.out"
@@ -328,10 +357,10 @@ class Sens:
         return
 
     def runSENS(self):
-        '''
+        """
         Runs the fortran sensitivity code and stores sensitivity
         netCDF file as the outfile dictated by the sensitivity object.
-        '''
+        """
         os.chdir(self._dir)
 
         try:
@@ -345,23 +374,28 @@ class Sens:
         except:
             print(os.sys.exc_info()[0])
             raise
+            
+        if self._sixhr:
+            sens_exec = "sixhresens"
+        else:
+            sens_exec = "esensSPC"
 
-        args = "module load intel; /lustre/work/aucolema/enkfDART/src/esensSPC <{} >esens.out".format(self._sensin)
+        args = "module load intel; /lustre/work/aucolema/enkfDART/src/{} <{} >esens.out".format(sens_exec, self._sensin)
         subprocess_cmd(args)
         return
 
     def storeSENSvals(self):
-        '''
+        """
         Runs fortran code to store individual member sensitivity variable values
         to 'SENSvals.nc'.
-        '''
+        """
         os.chdir(self._dir)
         args = "module load intel; /lustre/work/aucolema/enkfDART/src/sensvector <{} >sensvector.out".format(self._sensin)
         subprocess_cmd(args)
         return
 
     def runAll(self):
-        '''
+        """
         Run entire suite of code that performs the following in order using
         default options:
             1. Renames WRF outfiles for sens and subset library
@@ -379,7 +413,7 @@ class Sens:
                 stores all individual member outer domain
                 variables for sens time in a single file.
         Returns NULL.
-        '''
+        """
         os.chdir(self._dir)
         print("Renaming WRF outfiles...")
         self.renameWRFOUT()

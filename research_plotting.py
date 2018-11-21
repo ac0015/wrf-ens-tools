@@ -839,6 +839,7 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
     # TO-DO: Replace generic probppath with 1-hr and 6-hr paths/probs
     if sixhour:
         fullensprobpath = base + dirdate + '/probs/FULLENSwrfout_nbr{}_f{}.prob'.format(str(int(nbrhd)), str(time))
+        subsetprobpath = base + dirdate + '/probs/SUBSETwrfout_nbr{}_f{}.prob'.format(str(int(nbrhd)),str(time))
     else:
         fullensprobpath = base + dirdate + '/probs/FULLENSwrfout_nbr{}_f{}.prob'.format(str(int(nbrhd)),str(time))
         subsetprobpath = base + dirdate + '/probs/SUBSETwrfout_nbr{}_f{}.prob'.format(str(int(nbrhd)),str(time))
@@ -850,18 +851,24 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
     if sixhour:
         meanpath = base + dirdate + '/Rmean.out'
         meandat = Dataset(meanpath)
-        onehrprobs = meandat.variables['P_HYD'][0]
-        slpmean = onehrprobs[0]/100.
-        u10mean = onehrprobs[1]
-        v10mean = onehrprobs[2]
-        refl40fullens = probs[0]
-        uh25fullens = probs[1]
-        refl40subuhmax = probs[7]
-        uh25subuhmax = probs[8]
-        refl40subdbzcov = probs[11]
-        uh25subdbzcov = probs[12]
-        refl40subuhcov = probs[15]
-        uh25subuhcov = probs[16]
+        # TO-DO: Change this to actual six-hr means
+        u10mean = meandat.variables['U10'][0,:,:]
+        v10mean =  meandat.variables['V10'][0,:,:]
+        ##########################################
+        fullensprobdat = Dataset(fullensprobpath)
+        fensprobvar = fullensprobdat.variables['P_HYD'][0,:,:,:]
+        subsetprobdat = Dataset(subsetprobpath)
+        subsetprobvar = subsetprobdat.variables['P_HYD'][0,:,:,:]
+        refl40fullens = fensprobvar[0]
+        uh25fullens = fensprobvar[1]
+        uh40fullens = fensprobvar[2]
+        uh100fullens = fensprobvar[3]
+        wspd40fullens = fensprobvar[4]
+        refl40sub = subsetprobvar[0]
+        uh25sub = subsetprobvar[1]
+        uh40sub = subsetprobvar[2]
+        uh100sub = subsetprobvar[3]
+        wspd40sub = subsetprobvar[4]
         timeframe = '6 hr'
     # Else pull all data from one hour probs
     else:
@@ -927,7 +934,7 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
             if sixhour:
                 # Match six-hr times with masks
                 hours = [(hour - i)%24 for i in range(1,7)]
-                print("Timeframe used for sixhrlys:", hours)
+                print("Timeframe used for report sixhrlys:", hours)
                 tmask = [(hr in hours) for hr in torhr]
             else:
                 # Match times with masks
@@ -1014,6 +1021,7 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
     # Pull full ensemble mean and subset ensemble means
     rvals = Dataset(base + dirdate + '/Rvals.nc')
     submems = np.array(submems)
+    print(submems)
     fullensmeanuh = np.mean(np.array(rvals.variables['UH_MAX'][:]))
     submeanuh = np.mean(np.array(rvals.variables['UH_MAX'][submems-1]))
     fullensmeandbz = np.mean(np.array(rvals.variables['DBZ_MAX'][:]))

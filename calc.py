@@ -418,7 +418,7 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
             mask = lonmask & latmask
             masked_probs = probs[mask]
             masked_obs = obs[obind][mask]
-            npts = len(probs[mask])
+            npts = len(masked_probs)
             fbs = 0.
             fbs_worst = 0.
             for i in range(len(masked_probs)):
