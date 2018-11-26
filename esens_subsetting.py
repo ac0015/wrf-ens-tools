@@ -1,7 +1,8 @@
 #################################################
 # esens_subsetting.py
 #
-# Contains methods to subset an ensemble
+# Contains methods to perform sensitivity-based
+# ensemble subsetting.
 #
 # Slice information
 # ----------------
@@ -33,8 +34,6 @@
 #  24 - u10
 #  25 - v10
 #########################################################################
-
-
 
 import numpy as np
 from netCDF4 import Dataset
@@ -200,10 +199,11 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
             if method == 2:
                 #print("Max diff between mem and ob: ", np.ma.max(np.abs(mem_masked[:,:]-anlvar_masked[k,:,:])))
                 diff[k,i,:,:] = mem_masked[:,:] - anlvar_masked[k,:,:]
-                error[k,i,:,:] = np.ma.abs(sens_masked[k,:,:]*diff[k,i,:,:])
+                # Currently testing Brian's way of handling delta J
+                error[k,i,:,:] = sens_masked[k,:,:]*diff[k,i,:,:]
                 #print("Max Error:", np.max(error[k,i,:,:]))
             else:
-                error[k,i,:,:] = np.abs(mem_masked[:,:]-anlvar_masked[k,:,:])
+                error[k,i,:,:] = mem_masked[:,:]-anlvar_masked[k,:,:]
             # Restructure for later mask
             error[k,i][tmask[k]] = np.NaN
     # Mask all error data that was masked from member fields
@@ -343,8 +343,9 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
     # Sum total error and choose members with least error for subset
     summed_error = np.zeros((fullensnum))
     for i in range(fullensnum):
-        summed_error[i] = np.nansum(error_masked[:,i,:,:])/np.ma.size(error_masked[:,i,:,:])
-    print("Npts for member {}".format(1), np.ma.size(error_masked[:,0,:,:]))    
+        summed_error[i] = np.nansum(np.abs(error_masked[:,i,:,:]))/np.ma.size(error_masked[:,i,:,:])
+    print("Min/Max Summed Error:", np.min(summed_error), np.max(summed_error))
+    print("Npts for member {}".format(1), np.ma.size(error_masked[:,0,:,:]))
     print("Npts for member {}".format(i+1), np.ma.size(error_masked[:,i,:,:]))
     sorted_inds = summed_error.argsort()
     subset_mems = sorted_inds[:newensnum]+1 # Add one to correct zero-based

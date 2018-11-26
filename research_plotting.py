@@ -78,6 +78,8 @@ from scipy.ndimage.filters import gaussian_filter
 #  6 - Max Wind Spd
 ##########################################################
 
+package_directory = os.path.dirname(os.path.abspath(__file__))
+
 def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
     '''
     A method which interpolates a function
@@ -95,7 +97,8 @@ def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
 
     return interpolated_z
 
-def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
+def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2,
+                    reffile='/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'):
     '''
     Implementation of SPC practically perfect
     calculations adapted from SPC code
@@ -159,8 +162,7 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     f.close()
 
     # Get WRF lats/lons as pperf grid
-    ppfile = '/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'
-    dat = Dataset(ppfile)
+    dat = Dataset(reffile)
     wrflon = dat.variables['XLONG'][0]
     wrflat = dat.variables['XLAT'][0]
     dat.close()
@@ -341,7 +343,7 @@ def plotProbs(probpath, wrfrefpath, rbox, time, nbrhd, outpath='', subset=False)
                'uhmax100fullens']
 
     for i in range(len(figstrs)):
-        fig = plt.figure(figsize=(10, 10))
+        fig = plt.figure(figsize=(10, 8))
         # Build map
         ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal(central_longitude=clon,
                                                                        central_latitude=clat,
@@ -356,10 +358,11 @@ def plotProbs(probpath, wrfrefpath, rbox, time, nbrhd, outpath='', subset=False)
                              fill=False, color='green', linewidth=2., zorder=3.)
         ax.add_patch(rbox)
         ax.set_extent([llon-10.0, ulon+10.0, llat-5.0, ulat+5.0])
+        #ax.set_extent([-108., -85., 28., 45.])
         # Plot probs
-        cflevels = np.linspace(0., 100., 21)
-        prob = ax.contourf(lons, lats, gaussian_filter(problist[i], 7.5), cflevels, transform=ccrs.PlateCarree(),
-                           cmap=nclcmaps.cmap('precip3_16lev'), alpha=0.7, antialiased=True)
+        cflevels = np.linspace(10., 100., 10)
+        prob = ax.contourf(lons, lats, problist[i], cflevels, transform=ccrs.PlateCarree(),
+                           cmap=nclcmaps.cmap("perc2_9lev"), antialiased=True)
         fig.colorbar(prob, fraction=0.046, pad=0.04, orientation='horizontal', label='Probability (Percent)')
         # Format titles and figure names
         ax.set_title(r'Probability of {} at f{} with Neighborhood of {} km'.format(rstrs[i],
@@ -587,17 +590,13 @@ def calc1hrPaintball(datem, hour, variable, members, nx, ny, thresh):
 
     return paintball
 
-def calc6hrPaintball(datem, hour, variable, members, nx, ny, varstr):
+def calc6hrPaintball(datem, hour, variable, members, nx, ny, varstr,
+                    thresh):
     hour='%02d' % int(hour)
     start=int(hour)-6; start='%02d' % start
-
-    if varstr == 'UH':
-         thresh=25 #threshold grid cells will be paintballed on map
-    elif varstr == 'DBZ':
-         thresh=40
     numens = len(members)
     memcount = 0
-    base='/home/bancell/RT_ENS/holdver/' + datem + '/'
+    base='/lustre/scratch/aucolema/' + datem + '/'
     print(base)
 
     ######## DATETIME PROCESSING ########################################
@@ -635,29 +634,35 @@ def calc6hrPaintball(datem, hour, variable, members, nx, ny, varstr):
     yyyy5=time5[0:4]; mm5=time5[4:6]; dd5=time5[6:8]; hh5=time5[8:10]
     yyyy6=time6[0:4]; mm6=time6[4:6]; dd6=time6[6:8]; hh6=time6[8:10]
 
-    wrf1='wrfout_d02_'+ str(yyyy1) + '-' + str(mm1) + '-' + str(dd1) + '_' + str(hh1) + ':00:00'
-    wrf2='wrfout_d02_'+ str(yyyy2) + '-' + str(mm2) + '-' + str(dd2) + '_' + str(hh2) + ':00:00'
-    wrf3='wrfout_d02_'+ str(yyyy3) + '-' + str(mm3) + '-' + str(dd3) + '_' + str(hh3) + ':00:00'
-    wrf4='wrfout_d02_'+ str(yyyy4) + '-' + str(mm4) + '-' + str(dd4) + '_' + str(hh4) + ':00:00'
-    wrf5='wrfout_d02_'+ str(yyyy5) + '-' + str(mm5) + '-' + str(dd5) + '_' + str(hh5) + ':00:00'
-    wrf6='wrfout_d02_'+ str(yyyy6) + '-' + str(mm6) + '-' + str(dd6) + '_' + str(hh6) + ':00:00'
+    # wrf1='wrfout_d02_'+ str(yyyy1) + '-' + str(mm1) + '-' + str(dd1) + '_' + str(hh1) + ':00:00'
+    # wrf2='wrfout_d02_'+ str(yyyy2) + '-' + str(mm2) + '-' + str(dd2) + '_' + str(hh2) + ':00:00'
+    # wrf3='wrfout_d02_'+ str(yyyy3) + '-' + str(mm3) + '-' + str(dd3) + '_' + str(hh3) + ':00:00'
+    # wrf4='wrfout_d02_'+ str(yyyy4) + '-' + str(mm4) + '-' + str(dd4) + '_' + str(hh4) + ':00:00'
+    # wrf5='wrfout_d02_'+ str(yyyy5) + '-' + str(mm5) + '-' + str(dd5) + '_' + str(hh5) + ':00:00'
+    # wrf6='wrfout_d02_'+ str(yyyy6) + '-' + str(mm6) + '-' + str(dd6) + '_' + str(hh6) + ':00:00'
 
-    a=[wrf1,wrf2,wrf3,wrf4,wrf5,wrf6]
+
+
+    #a=[wrf1,wrf2,wrf3,wrf4,wrf5,wrf6]
     ####################################################################
     max_mem_val=np.empty(numens)
     paintball=np.empty((numens,ny,nx),dtype='float') #allocate numens x model grid array
+    print(hour)
+    print(members)
     for i in range(len(members)): ###loop through num of members
+        #print(i)
+        a = ['R{}_{}.out'.format(members[i], int(hour)-t) for t in range(6)]
+        print(a)
         if os.path.isfile(base + 'mem' + str(members[i]) + '/' + a[-1]):
             var=np.empty((len(a),ny,nx),dtype='float')
-
             memcount += 1
-
+            print(memcount)
             #### Time Loop, num of wrfouts ####
             for j in a: ###loop through num of files/times
-
+                print(j)
                 k=a.index(j) #loop count
                 path=base+'mem'+str(members[i])+"/"+j
-                #print(path)
+                print(path)
 
                 ncfile = Dataset(path, 'r')
                 if variable.lower() == 'refl_10cm':
@@ -667,12 +672,12 @@ def calc6hrPaintball(datem, hour, variable, members, nx, ny, varstr):
                 ncfile.close()
       ##################################
 
-        ### Back to Each Member ###
+            ### Back to Each Member ###
             #Now we have our NT x NY x NX array for member i...find max values!
             max=np.max(var,0) #This is max 2d field over three times
 
             max_mem_val[i]=np.max(np.max(max,0))
-            #print("Member " + str(i) + " Max:", max_mem_val[i])
+            print("Member " + str(i) + " Max:", max_mem_val[i])
 
             #give occurence integer of mem number
             max[max > thresh] = int(members[i]) #if >= thresh, set as 1
@@ -826,7 +831,7 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
     # Base dir
     yr, mo, day, hr = str(dirdate)[:4], str(dirdate)[4:6], str(dirdate)[6:8], str(dirdate)[8:10]
     runinit = datetime(year=int(yr), month=int(mo), day=int(day), hour=int(hr))
-    base='/lustre/research/bancell/aucolema/HWT2016runs/'
+    base='/lustre/scratch/aucolema/'
 
     # Get subset data
     subsetdat = np.genfromtxt(base + dirdate + '/esens.in', dtype=str)
@@ -1006,7 +1011,7 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
     thresh = [25, 40, 40, 100, 40]
     titlevars = [r'Updraft Helicity Maximum', 'Reflectivity Average',
                  r'Updraft Helicity Maximum', r'Updraft Helicity Maximum', 'Wind Speed Maximum']
-    rstrs = [r'UH > 25 m$^2$/s$^2$', 'Reflectivity > 40 dBZ', r'UH > 40 m$^2$/s$^2$'
+    rstrs = [r'UH > 25 m$^2$/s$^2$', 'Reflectivity > 40 dBZ', r'UH > 40 m$^2$/s$^2$',
              r'UH > 100 m$^2$/s$^2$', r'Wind Speed > 40 miles/hour']
     figstrs = ['uhmax25_sub{}_{}_f{}'.format(subsettype, dirdate, time),
                'refl40_sub{}_{}_f{}'.format(subsettype, dirdate, time),
@@ -1046,7 +1051,7 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
         mems = np.array(memslist[i][:], dtype=int)
         inds = mems.argsort()
         print('Ordered subset members:', mems[inds])
-        cflevs= [0., 2., 10., 20., 30., 40., 50., 60., 70., 80., 90., 100.]
+        cflevs= [10., 20., 30., 40., 50., 60., 70., 80., 90., 100.]
 
         # Add background data/set extents for each plot
         for ax in axes:
@@ -1105,9 +1110,11 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
             # Plot practically perfect if values above zero
             if np.max(pperf) > 0.:
                 print(np.max(pperf*100))
-                cfpperf = ax4.contourf(plons, plats, pperf*100, cflevs, cmap=nclcmaps.cmap('precip3_16lev'),
-                                       transform=ccrs.PlateCarree(), alpha=0.8, zorder=1)
-                pperfcbar = fig.colorbar(cfpperf, ax=ax4, fraction=0.046, pad=0.04, orientation='vertical',
+                cfpperf = ax4.contourf(plons, plats, pperf*100, cflevs,
+                                        cmap=nclcmaps.cmap("perc2_9lev"),
+                                        transform=ccrs.PlateCarree(),
+                                        alpha=0.8, zorder=1)
+                pperfcbar = fig.colorbar(cfpperf, ax=ax4, fraction=0.03, pad=0.04, orientation='vertical',
                      label='Probability (Percent)')
                 #pperfcbar.ax.set_yticklabels(['{:.0f}'.format(x) for x in cflevs])
             # Add legend for SPC reports
@@ -1124,13 +1131,16 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
             ax4.set_title('SPC Reports (currently unavailable)')
         print("Max Full Ens Probs: ", np.max(fullensprobs[i]), "Max Subset Probs: ", np.max(subsetprobs[i]))
         # Plot probs
-        fullprob = ax1.contourf(lons, lats, fullensprobs[i], cflevs, transform=ccrs.PlateCarree(),
-                           cmap=nclcmaps.cmap('precip3_16lev'), zorder=1, antialiased=True)
-        subprob = ax2.contourf(lons, lats, subsetprobs[i], cflevs, transform=ccrs.PlateCarree(),
-                           cmap=nclcmaps.cmap('precip3_16lev'), zorder=1, antialiased=True)
-        deltalevs = np.linspace(-80., 80., 17)
+        fullprob = ax1.contourf(lons, lats, gaussian_filter(fullensprobs[i], 1),
+                            cflevs, transform=ccrs.PlateCarree(),
+                            cmap=nclcmaps.cmap("perc2_9lev"), zorder=1, antialiased=True)
+        subprob = ax2.contourf(lons, lats, gaussian_filter(subsetprobs[i], 1), cflevs,
+                            transform=ccrs.PlateCarree(),
+                            cmap=nclcmaps.cmap("perc2_9lev"), zorder=1, antialiased=True)
+        deltalevs = np.linspace(-100., 100., 21)
         deltacmap = copy(nclcmaps.cmap('ViBlGrWhYeOrRe'))
-        deltaprob = ax3.contourf(lons, lats, (subsetprobs[i] - fullensprobs[i]),
+        deltaprob = ax3.contourf(lons, lats,
+                                gaussian_filter(subsetprobs[i] - fullensprobs[i], 1),
                                  deltalevs, transform=ccrs.PlateCarree(),
                                  cmap=deltacmap,
                                  antialiased=True)
@@ -1139,9 +1149,12 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
             fullensrange = np.arange(1,43,1)
             if sixhour:
                 fullpaintball = calc6hrPaintball(dirdate, time, wrfvar[i], fullensrange,
-                                         len(lons[0,:]), len(lats[:,0]), paintballstrs[i])
+                                         len(lons[0,:]), len(lats[:,0]), paintballstrs[i],
+                                         thresh=thresh[i])
                 subpaintball = calc6hrPaintball(dirdate, time, wrfvar[i],mems[inds],
-                                         len(lons[0,:]), len(lats[:,0]), paintballstrs[i])
+                                         len(lons[0,:]), len(lats[:,0]),
+                                         paintballstrs[i],
+                                         thresh=thresh[i])
             else:
                 fullpaintball = calc1hrPaintball(dirdate, time, wrfvar[i], fullensrange,
                                          len(lons[0,:]), len(lats[:,0]), thresh[i])
@@ -1149,6 +1162,7 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
                                          len(lons[0,:]), len(lats[:,0]), thresh[i])
             flevs = np.arange(0.99999, len(fullensrange)+0.01,1)
             sublevs = mems[inds]
+            #sublevs = np.linspace(0, np.max(mems[inds]), len(mems[inds]) + 1)
             if len(sublevs) < 2:
                 raise
             for j in range(len(fullensrange)):
@@ -1170,18 +1184,18 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
                                         transform=ccrs.PlateCarree(),
                                         antialiased=True, alpha=0.7)
             if np.max(fullpaintball) > flevs[0]:
-                fpaintballcbar = fig.colorbar(fpaint, fraction=0.046, pad=0.04, orientation='vertical',
+                fpaintballcbar = fig.colorbar(fpaint, fraction=0.03, pad=0.04, orientation='vertical',
                                      ticks=np.arange(0.99999, len(fullensrange)+0.01, 6),
                                      ax=ax5,label='Full Ens Member Number')
                 fpaintballcbar.ax.set_yticklabels(['{:.0f}'.format(x) for x in np.arange(1,len(fullensrange)+0.05,6)])
             if np.max(subpaintball) > sublevs[0]:
-                spaintballcbar = fig.colorbar(spaint, fraction=0.046, pad=0.04, orientation='vertical',
+                spaintballcbar = fig.colorbar(spaint, fraction=0.03, pad=0.04, orientation='vertical',
                                           ax=ax6,label='Subset Member Number')
         except:
             print('No paintball vals to plot. Skipping')
-        fig.colorbar(fullprob, fraction=0.046, pad=0.04, ax=ax2, orientation='vertical',
+        fig.colorbar(fullprob, fraction=0.03, pad=0.04, ax=ax2, orientation='vertical',
                      label='Probability (Percent)')
-        fig.colorbar(deltaprob, fraction=0.046, pad=0.04, ax=ax3, orientation='vertical',
+        fig.colorbar(deltaprob, fraction=0.03, pad=0.04, ax=ax3, orientation='vertical',
                      label='Probability (Percent)', extend='both')
         fig.suptitle('Response Function: {} {} at f{} \n Valid for Run Initialized: {} \n Response Endtime: {}'.format(timeframe, titlevars[i],
                   time, str(runinit), str(rdate)))

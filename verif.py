@@ -17,6 +17,7 @@ import matplotlib.cm as cm
 import nclcmaps
 import cartopy.crs as ccrs
 import cartopy.feature as cfeat
+import cmocean
 
 def storeEnsStats(ensprobpath, obpath, reliabilityobpath,
                   outpath, runinit, fhr,
@@ -412,6 +413,7 @@ def plotReliabilityfromCSV(statspaths, outpath, subset=False, subgroupby="Sens_V
     Plot reliability diagram from csv files.
     '''
     # TO-DO: Add plotting functions from csv
+    pass
 
 def plotReliabilityfromNETCDF(statspaths, outpath, subset=False, subgroupby="Sens_Vars",
                     sigmas=[0,1,2], uhthresholds=[25., 40., 100.], nbrs=[30, 45, 60],
@@ -556,17 +558,17 @@ def plotReliabilityfromNETCDF(statspaths, outpath, subset=False, subgroupby="Sen
             plt.savefig(outpath)
             plt.close()
         return
-    
+
 def plotPracPerf(pperfpath, sixhour=False,
                  wrfoutref="/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2"):
     """
     Plots practically perfect probabilities given
     the desired practically perfect filepath and
     store it to the designated outfile path.
-    """                
+    """
     pperfnc = Dataset(pperfpath)
     init = pperfnc.START_DATE
-    initdate = datetime(int(init[:4]), int(init[5:7]), 
+    initdate = datetime(int(init[:4]), int(init[5:7]),
                         int(init[8:10]), int(init[11:13]))
     fhrs = pperfnc.variables['fhr'][:]
     sigma = pperfnc.variables['sigma'][:]
@@ -576,7 +578,7 @@ def plotPracPerf(pperfpath, sixhour=False,
     lats = ref.variables['XLAT'][0]
     print(np.shape(pperf))
     print(np.shape(lons))
-    
+
     for t in range(len(fhrs)):
         fig = plt.figure(figsize=(10, 10))
         time = initdate + timedelta(hours=int(fhrs[t]))
@@ -588,12 +590,12 @@ def plotPracPerf(pperfpath, sixhour=False,
         ax.add_feature(state_borders, linestyle="-", edgecolor='dimgray')
         ax.add_feature(cfeat.BORDERS, edgecolor='dimgray')
         ax.add_feature(cfeat.COASTLINE, edgecolor='dimgray')
-        cflevels = np.arange(1, 101, 1)
+        cflevels = np.arange(10, 110, 10)
         cf = ax.contourf(lons, lats, pperf[t], cflevels, transform=ccrs.PlateCarree(),
-                         cmap='viridis')
+                         cmap=nclcmaps.cmap("perc2_9lev"))
         #plt.clabel(cs)
         plt.colorbar(cf, ax=ax, fraction=0.039, pad=0.01, orientation='vertical', label='Probability')
-        if sixhour:    
+        if sixhour:
             plt.title(r'$\sigma = $' + str(sigma[0]) + ' Practically Perfect valid: ' + \
                       str(time-timedelta(hours=6)) + ' to ' + str(time))
             plt.savefig('sixhr_pperf_f{}.png'.format(fhrs[t]))

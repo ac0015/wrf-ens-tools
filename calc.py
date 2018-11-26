@@ -278,17 +278,17 @@ def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2):
 
     Inputs
     ------
-    runinitdate -- datetime obj for
+    runinitdate --- datetime obj for
                     model initialization being
                     used.
-    sixhr -------- boolean specifying whether
+    sixhr --------- boolean specifying whether
                     to calculate practically perfect
                     probs over six hr time window or
                     use one hr time window.
-    rtime -------- time (in num fcst hrs
+    rtime --------- time (in num fcst hrs
                     from runinit) to obtain six hr
                     or one hr practically perfect.
-    sigma -------- optional float specifying sigma
+    sigma --------- optional float specifying sigma
                     to use for Gaussian filter.
 
     Outputs
@@ -439,42 +439,42 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
 
     Inputs
     ------
-    probpath - path to netCDF file containing
-                probability values. IMPORTANT
-                NOTE - prob file is expected to
-                be organized like in probcalcSUBSET.f
-                 Variable P_HYD[0,i,:,:]:
-                  i         Var
-                 [0]   Refl > 40 dBZ probs
-                 [1]   UH > 25 m2/s2 probs
-                 [2]   UH > 40 m2/s2 probs
-                 [3]   UH > 100 m2/s2 probs
-                 [4]   Wind Speed > 40 mph probs
-    obspath -- path to netCDF file containing
-                observation verification values.
-                Currently, practically perfect
-                for verifying UH is the only
-                verification type supported.
-    var ------ string describing variable to verify.
-                Only supports 'updraft_helicity'
-                option as of right now.
-    thresh --- float describing threshold of
-                variable to use when
-                pulling probs. Choices
-                for UH are 25, 40, and 100 m2/s2.
-                Choices for Reflectivity and
-                Win Speed are 40 (dbz) and
-                40 (mph) respectively.
-    rboxpath - optional path to sensitivity calc
-                input file. Only needed if using
-                FSS to verify subsets. Otherwise
-                leave as None.
-    prob_var - name of netCDF variable in which
-                probabilities are stored (as string).
-                If using probability calculations from
-                this library, probabilities will by default
-                be stored in 'P_HYD'.
-    smooth_w_sigma - optional smoothing parameter. If you
+    probpath ---------- path to netCDF file containing
+                        probability values. IMPORTANT
+                        NOTE - prob file is expected to
+                        be organized like in probcalcSUBSET.f
+                            Variable P_HYD[0,i,:,:]:
+                                i         Var
+                            [0]   Refl > 40 dBZ probs
+                            [1]   UH > 25 m2/s2 probs
+                            [2]   UH > 40 m2/s2 probs
+                            [3]   UH > 100 m2/s2 probs
+                            [4]   Wind Speed > 40 mph probs
+    obspath ----------- path to netCDF file containing
+                        observation verification values.
+                        Currently, practically perfect
+                        for verifying UH is the only
+                        verification type supported.
+    var --------------- string describing variable to verify.
+                        Only supports 'updraft_helicity'
+                        option as of right now.
+    thresh ------------ float describing threshold of
+                        variable to use when
+                        pulling probs. Choices
+                        for UH are 25, 40, and 100 m2/s2.
+                        Choices for Reflectivity and
+                        Win Speed are 40 (dbz) and
+                        40 (mph) respectively.
+    rboxpath ---------- optional path to sensitivity calc
+                        input file. Only needed if using
+                        FSS to verify subsets. Otherwise
+                        leave as None.
+    prob_var ---------- name of netCDF variable in which
+                        probabilities are stored (as string).
+                        If using probability calculations from
+                        this library, probabilities will by default
+                        be stored in 'P_HYD'.
+    smooth_w_sigma ---- optional smoothing parameter. If you
                         want to smooth the ensemble probs,
                         replace None default with a sigma
                         value for the standard deviation of
@@ -484,7 +484,7 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
 
     Outputs
     -------
-    Returns fss_all, fss_rbox, and sigma back as a
+    returns fss_all, fss_rbox, and sigma back as a
     tuple.
 
     fss_all -- fractional skill score as float for
@@ -528,24 +528,23 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
     lats = wrf.getvar(probdat, 'lat')
     lons = wrf.getvar(probdat, 'lon')
     npts = len(lats[:,0]) * len(lons[0,:])
-    #prob_gt_than = (probs >= probthresh)
     fbs = 0.
     fbs_worst = 0.
     print('Max ens probs and max ob probs: ', np.max(probs), np.max(obs[obind]))
+
+    # Calculate FBS at each grid point and aggregate.
     if (np.max(obs[obind]) > 0.) or (np.max(probs) > 0.):
-        #print(np.shape(probs), np.shape(obs[obind]))
         for i in range(len(lons[0,:])):
             for j in range(len(lats[:,0])):
                 fbs += (probs[j,i] - obs[obind,j,i])**2
                 fbs_worst += probs[j,i]**2 + obs[obind,j,i]**2
-                #print(probs[j,i], obs[obind,j,i])
         print('FBS: ', fbs)
         fbs, fbs_worst = fbs/npts, fbs_worst/npts
         # Use FBS and FBS worst to calculate FSS for whole grid
         fss_all = 1 - (fbs/fbs_worst)
         print("FSS Total and num points: ", fss_all, ',', npts)
 
-        # Calculate FSS within response box if using sensitivity
+        # Calculate FSS within response box if using ensemble sensitivity
         if rboxpath is not None:
             sensin = np.genfromtxt(rboxpath, dtype=str)
             rbox = sensin[4:8]
@@ -557,9 +556,7 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
             print("Min/Max Lat:", np.min(lats[latmask]), np.max(lats[latmask]))
             masked_probs = probs[mask]
             masked_obs = obs[obind][mask]
-            npts = len(masked_probs)
-            fbs = 0.
-            fbs_worst = 0.
+            npts = len(masked_probs); fbs = 0.; fbs_worst = 0.
             for i in range(len(masked_probs)):
                 fbs += (masked_probs[i] - masked_obs[i])**2
                 fbs_worst += masked_probs[i]**2 + masked_obs[i]**2
@@ -627,10 +624,10 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
     Outputs
     -------
     returns an array of probability bins, forecast frequencies for the total domain
-     of each bin, observation hit rates for each bin, forecast frequencies for the
-     response box for each bin, observation hit rates for the response box for each
-     bin (if not verifying subsets, will return arrays of zeros for the response box
-     metrics).
+    of each bin, observation hit rates for each bin, forecast frequencies for the
+    response box for each bin, observation hit rates for the response box for each
+    bin (if not verifying subsets, will return arrays of zeros for the response box
+    metrics).
     '''
     print('Starting reliability calculations...')
     prob_bins = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
