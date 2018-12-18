@@ -143,10 +143,11 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
 
         return grid
 
-def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
+def calc_prac_perf_native_grid(runinitdate, sixhr, rtime, sigma=2):
     '''
-    Implementation of SPC practically perfect
-    calculations adapted from SPC code
+    Implementation of practically perfect probability
+    calculations from Robert Hepper's code. This calculates
+    practically perfect probabilities on the native WRF grid.
 
     Inputs
     ------
@@ -160,10 +161,136 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     rtime -------- time (in num fcst hrs
                     from runinit) to obtain six hr
                     or one hr practically perfect.
-    sigma -------- optional integer specifying sigma
+    sigma -------- optional float specifying sigma
                     to use for Gaussian filter.
-                    Operational practically perfect uses
-                    the default sgma of 2.
+
+    Outputs
+    -------
+    returns tuple containing pract perf probs
+    and lons/lats (respectively) of pperf grid
+    '''
+    #Get initialization date
+    runinitdatef = runinitdate.strftime('%y%m%d')
+    rdate = runinitdate + timedelta(hours=rtime)
+    # Since reports are from 12Z - 1159Z, make sure
+    #  we are grabbing the correct date.
+    if (rtime > 23) & (runinitdate.hour == 12):
+        runinitdatef = (runinitdate + timedelta(days=1)).strftime('%y%m%d')
+    elif (rtime > 35) & (runinitdate.hour == 0):
+        runinitdatef = (runinitdate + timedelta(days=1)).strftime('%y%m%d')
+    print('Pullng SPC reports from ', runinitdatef)
+    print('Response time ', rdate)
+
+    #Get report CSV file from web
+    rptfile = runinitdatef+'_rpts_filtered.csv'
+    add = 'www.spc.noaa.gov/climo/reports/'+rptfile
+    call(['wget',add])
+
+    #Make lists of report lats and lons
+    try:
+    	with open(rptfile) as csvf:
+            r = csv.reader(csvf)
+            mylist = list(r)
+    except IOError:
+    	print('Report CSV file could not be opened.')
+    	sys.exit()
+
+    length = len(mylist)-3
+    time = [0]*length
+    lats = [0]*length
+    lons = [0]*length
+    ct = 0
+    for f in mylist:
+        if 'Time' not in f and 'Comments' not in f:
+            time[ct] = int(str(f[0])[:2])
+            lats[ct] = float(f[5])
+            lons[ct] = float(f[6])
+            ct = ct+1
+
+    # Get WRF lats/lons as pperf grid
+    wrffile = '/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'
+    dat = Dataset(wrffile)
+    wrflon = dat.variables['XLONG'][0]
+    wrflat = dat.variables['XLAT'][0]
+    dat.close()
+
+    #If there aren't any reports, practically perfect is zero across grid
+    if length == 0:
+    	pperf = np.zeros_like(wrflon)
+
+    #Otherwise, let's grid the reports
+    else:
+        # If six hour, mask reports by valid times in window
+        if sixhr:
+            hour = rdate.hour
+            hours = [(hour - i)%24 for i in range(1,7)]
+            mask = [(hr in hours) for hr in time]
+            print('Reports valid {} to {}'.format(hours[-1], hours[0]))
+        else:
+            hour = rdate.hour
+            mask = [(hr == (hour-1)%24) for hr in time]
+            print('Reports valid {} to {}'.format((hour-1)%24,hour))
+        try:
+            #Set up empty grid onto correct projection
+            grid = np.zeros_like(wrflon)
+            NDFD = pyproj.Proj("+proj=lcc +lat_1=25 +lat_2=25 +lon_0=-95 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+
+            # Convert lat/lon grid into projection space
+            X, Y = NDFD(wrflon, wrflat)
+            WRFX, WRFY = NDFD(wrflon, wrflat)
+
+            # Convert lat/lon reports into projection space
+            x, y = NDFD(lons, lats)
+
+            #Create KD-Tree for effecient lookup
+            gpoints = np.array(list(zip(X.ravel(), Y.ravel())))
+            gtree = sp.spatial.cKDTree(gpoints)
+
+            # Run the KD-Tree to get distances to nearest gridbox and then index of nearest grid point
+            dists, inds = gtree.query(np.array(list(zip(x, y))), distance_upper_bound=1000000000.)
+
+            # Convert index of 1D array into index of 2D lat/lon array
+            xind, yind = np.unravel_index(inds[mask], X.shape)
+
+            # Loop through all points and increment that grid cell by 1
+            for xi, yi in zip(xind, yind):
+                grid[xi, yi] = 1
+
+        	# Gaussian smoother over our grid to create practically perfect probs
+            pperf = ndimage.gaussian_filter(grid, sigma=sigma, order=0)
+
+        except:
+            pperf = np.zeros_like(wrflon)
+
+    #Remove report CSV file
+    os.remove(rptfile)
+    print("Practically Perfect min/max: ", np.min(pperf), ' , ', np.max(pperf))
+
+    return pperf, wrflon, wrflat
+
+def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2):
+    '''
+    Implementation of practically perfect probability
+    calculations adapted from Robert Hepper's code.
+    Practically perfect probs are calculated on a grid
+    with 80-km grid spacing and then interpolated to the
+    native WRF grid.
+
+    Inputs
+    ------
+    runinitdate -- datetime obj for
+                    model initialization being
+                    used.
+    sixhr -------- boolean specifying whether
+                    to calculate practically perfect
+                    probs over six hr time window or
+                    use one hr time window.
+    rtime -------- time (in num fcst hrs
+                    from runinit) to obtain six hr
+                    or one hr practically perfect.
+    sigma -------- optional float specifying sigma
+                    to use for Gaussian filter.
+
     Outputs
     -------
     returns tuple containing pract perf probs
@@ -215,11 +342,12 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     f.close()
 
     # Get WRF lats/lons as pperf grid
-    wrffile = '/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'
-    dat = Dataset(wrffile)
+    ppfile = '/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'
+    dat = Dataset(ppfile)
     wrflon = dat.variables['XLONG'][0]
     wrflat = dat.variables['XLAT'][0]
     dat.close()
+    mod = 24
 
     #If there aren't any reports, practically perfect is zero across grid
     if length == 0:
@@ -229,15 +357,13 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
         # If six hour, mask reports by valid times in window
         if sixhr:
             hour = rdate.hour
-            hours = [(hour - i)%24 for i in range(1,7)]
+            hours = [(hour - i)%mod for i in range(1,7)]
             mask = [(hr in hours) for hr in time]
+            print("Reports valid {} to {}".format(hours[-1], hours[0]))
         else:
             hour = rdate.hour
-            mask = [(hr == (hour-1)%24) for hr in time]
-            print('Reports valid {} to {}'.format((hour-1)%24,hour))
-            #print('Report hours from reports used:', np.array(time)[mask])
-            #print(mask)
-            #print(time)
+            mask = [(hr == (hour-1)%mod) for hr in time]
+            print('Reports valid {} to {}'.format((hour-1)%mod,hour))
         try:
             #Set up empty grid onto correct projection
             grid = np.zeros_like(lon)
@@ -246,7 +372,6 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
             # Convert lat/lon grid into projection space
             X, Y = NDFD(lon, lat)
             WRFX, WRFY = NDFD(wrflon, wrflat)
-            #print(WRFX.shape, WRFY.shape)
             # Convert lat/lon reports into projection space
             x, y = NDFD(lons, lats)
 
@@ -263,14 +388,13 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
             # Loop through all points and increment that grid cell by 1
             for xi, yi in zip(xind, yind):
                 grid[xi, yi] = 1
-            #print(grid)
 
         	# Gaussian smoother over our grid to create practically perfect probs
             tmppperf = ndimage.gaussian_filter(grid,sigma=sigma, order=0)
 
             # Interpolate to WRF grid
             pperf = bilinear_interp(X, Y, WRFX, WRFY, tmppperf)
-            #print(np.shape(pperf))
+            print('Min/Max Prac Perf: ', np.min(pperf), '/', np.max(pperf))
         except:
             pperf = np.zeros_like(wrflon)
 
@@ -306,7 +430,8 @@ def dist_mask(xind, yind, xpts, ypts, r):
 #############################################################
 
 def FSS(probpath, obspath, fhr, var='updraft_helicity',
-        thresh=25., rboxpath=None, prob_var='P_HYD'):
+        thresh=25., rboxpath=None, prob_var='P_HYD',
+        smooth_w_sigma=None):
     '''
     Calculates fractional skill score for a probabilstic
     ensemble forecast, Obs need to be pre-interpolated
@@ -349,6 +474,13 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
                 If using probability calculations from
                 this library, probabilities will by default
                 be stored in 'P_HYD'.
+    smooth_w_sigma - optional smoothing parameter. If you
+                        want to smooth the ensemble probs,
+                        replace None default with a sigma
+                        value for the standard deviation of
+                        the Gaussian kernel to use. Otherwise
+                        FSS is calculated with the raw ensemble
+                        probabilities.
 
     Outputs
     -------
@@ -386,6 +518,11 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
     probvar = probdat.variables['P_HYD'][0]
     d = probinds[var]
     probs = probvar[d[int(thresh)]]
+
+    # If sigma was passed, use it to smooth probs
+    if smooth_w_sigma is not None:
+        probs = ndimage.gaussian_filter(probs, sigma=smooth_w_sigma)
+
     # First calculate FBS (Fractions Brier Score) on whole grid
     wrf.disable_xarray()
     lats = wrf.getvar(probdat, 'lat')
@@ -416,6 +553,8 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
             lonmask = (lons > llon) & (lons < ulon)
             latmask = (lats > llat) & (lats < ulat)
             mask = lonmask & latmask
+            print("Min/Max Lon:", np.min(lons[lonmask]), np.max(lons[lonmask]))
+            print("Min/Max Lat:", np.min(lats[latmask]), np.max(lats[latmask]))
             masked_probs = probs[mask]
             masked_obs = obs[obind][mask]
             npts = len(masked_probs)

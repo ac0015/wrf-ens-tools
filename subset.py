@@ -6,7 +6,7 @@ Created on Thu Feb  8 10:11:46 2018
 @author: aucolema
 """
 import numpy as np
-import os, csv
+import os, csv, subprocess
 from datetime import timedelta
 from sens import Sens
 from esens_subsetting import ensSubset
@@ -14,7 +14,7 @@ from interp_analysis import fromDatetime, interpRAPtoWRF, subprocess_cmd
 import research_plotting
 from netCDF4 import Dataset
 from calc import FSS, Reliability
-from post_process import storePracPerf, gen_dict, process_wrf
+from post_process import gen_dict, process_wrf, postTTUWRFanalysis
 
 #################
 # Subset class
@@ -29,7 +29,7 @@ class Subset:
     def __init__(self, sens=Sens(), subset_size=21, subset_method='percent',
                  percent=70., sensvalfile="SENSvals.nc", nbrhd=32.1869, thresh=25.,
                  sensvars=['500_hPa_GPH', '700_hPa_T', '850_hPa_T', 'SLP'],
-                 analysis_type="RAP"):
+                 analysis_type="RAP", wrfanalysis_to_post_path=None):
         """
         Constructor for an instance of the Subset class.
 
@@ -54,13 +54,19 @@ class Subset:
                         used in probability calculations. Defaults to 32.1869 km
                         or 20 miles.
         thresh -------- float controlling threshold of response function to use
-                        for probabilities in verification statistics.
+                        for probabilities in verification statistics. If using
+                        coverage response function, make sure this is equal to
+                        the response threshold of the Sens object for an apples-
+                        to-apples verification.
         sensvars ------ list of strings containing the desired sensitivity variables
                         on which to base the subset. Must comply with naming conventions
                         of keys in the RAP interpolation from interp_analysis.py.
         analysis_type - string specifying type of analysis to calculate sensitivity var
                         errors. Currently accepts "RAP" or "WRF".
+        wrfanalysis_to_post_path -- optional path to half post-processed WRF analysis
+                                    produced by reduced file process specific to TTU.
         """
+        self._modpath = os.path.dirname(research_plotting.__file__)
         self._sens = sens
         self._fullens = np.arange(1,sens.getEnsnum()+1,1)
         self._subsize = subset_size
@@ -69,6 +75,16 @@ class Subset:
         self._sensvars = sensvars
         self._thresh = thresh
         self._nbr = nbrhd
+        # Only need this if you need to post-process an analysis file
+        #  and not using RAP
+        self._wrfpath_to_post_proc = wrfanalysis_to_post_path
+
+        # If thresh and sens object response threshold don't match,
+        #  issue warning
+        if self._thresh != self._sens.getResponseThreshold():
+            print("WARNING - Subset obj response threshold and Sensitivity obj\n",
+                  "don't match. Only makes a difference if working with coverage\n",
+                  "response functions.")
 
         # If method is not in methodchoices, set to percent (RMS) method
         try:
@@ -97,12 +113,11 @@ class Subset:
         self._sensvalfile = sens.getDir() + sensvalfile
         self._fensprob = "FULLENSwrfout_nbr{}_f{}.prob".format(int(self._nbr), self._sens.getRTime())
         self._subprob = "SUBSETwrfout_nbr{}_f{}.prob".format(int(self._nbr), self._sens.getRTime())
+        self._dx = Dataset(sens.getRefFileD2()).DX
 
     def __str__(self):
-        return "Subset object with full ensemble of {} members, subset size of {}, and using the {} subsetting method \
-        with a threshold of {}, neighborhood of {}, response threshold of {} and these sensitivity variables: {}. \
-        Based on Sens object: \n {}".format(self._sens.getEnsnum(), self._subsize,
-        self._method, str(self._percent), str(self._nbr), str(self._thresh), ','.join(self.getSensVars()), str(self.getSens()))
+        return "Subset object with full ensemble of {} members, subset size of {}, and using the {} subsetting method with a threshold of {}, neighborhood of {}, response threshold of {} and these sensitivity variables: {}. Using {} analysis for subsetting. Based on Sens object: \n {}".format(self._sens.getEnsnum(),
+                                                    self._subsize, self._method, str(self._percent), str(self._nbr), str(self._thresh), ','.join(self.getSensVars()), str(self._analysis), str(self.getSens()))
 
     def setSubsetMethod(self, subset_method):
         """
@@ -162,6 +177,13 @@ class Subset:
         """
         return self._sensvars
 
+    def getHorizGridSpacingD2(self):
+        """
+        Returns horizontal grid spacing
+        of inner domain
+        """
+        return self._dx
+
     def interpRAP(self):
         """
         If using RAP analysis, must call this function to interpolate
@@ -174,20 +196,22 @@ class Subset:
         interpRAPtoWRF(yr, mo, day, hr, self.getSens().getRefFileD1())
         return
 
-    def processWRFAnalysis(self):
+    def processWRFAnalysis(self, half_post_processed=False):
         """
         If using WRF analysis, must call this function to post-process
         all necessary sensitivity variables for subsetting. Returns NULL
         but will produce netCDF outfile with filepath described by the
-        nalysis attribute of the Subset instance.
+        analysis attribute of the Subset instance. The half_post_processed
+        argument is associated with the post-processing technique implemented
+        by Team Bancell and has a specific function for post-processing (if
+        you don't know what this last part means then you won't need to use it).
         """
-        basedir = self.getSens().getDir()
-        # Analysis will only be one file without any subdirectories, but still
-        #  need to give process_wrf a dictionary, so let gen_dict()
-        #  take care of that.
-        inpath = gen_dict(basedir, 1, subdir="", ntimes=1)
-        # Use default vars for process_wrf and default naming conventions.
-        process_wrf(inpath, outpath=self._analysis, reduced=True)
+        if half_post_processed:
+            postTTUWRFanalysis(self._wrfpath_to_post_proc, self._analysis)
+        else:
+            # Use default vars for process_wrf and default naming conventions.
+            process_wrf(self._wrfpath_to_post_proc, outpath=self._analysis, reduced=True)
+
         return
 
     def calcSubset(self):
@@ -197,13 +221,18 @@ class Subset:
         parameters of the Subset obj.
         """
         S = self.getSens()
+        print(os.path.isfile(self._analysis))
         if (os.path.isfile(self._analysis) == False):
             if self._analysis_type == "RAP":
                 print("{} does not exist. Running RAP interpolation.".format(self._analysis))
                 self.interpRAP()
             elif self._analysis_type == "WRF":
                 print("{} does not exist. Running WRF post-process.".format(self._analysis))
-                self.processWRFAnalysis()
+                if self._wrfpath_to_post_proc is not None:
+                    half_post_processed = True
+                else:
+                    half_post_processed = False
+                self.processWRFAnalysis(half_post_processed)
         if (os.path.isfile(S.getWRFSensFile()) == False):
             print("{} does not exist. Running sensitivity module with Sens obj.".format(S.getWRFSensFile()))
             S.runSENS()
@@ -219,7 +248,7 @@ class Subset:
         np.savetxt(S.getDir() + 'subset_members.txt', np.array(self._subset, dtype=int))
         return
 
-    def calcProbs(self, members):
+    def OLDcalcProbs(self, members):
         """
         Runs the fortran executable calcprobSUBSET to calculate
         probabilities for any number of ensemble members. Takes
@@ -300,15 +329,13 @@ class Subset:
 
         # Run fortran executable
         # TO-DO: figure out why this fails when submitted as a job
-        
-        # 
         if S.getSixHour():
             print("Calculating six hour probabilities...")
             probcalc_exec = "sixhrprobcalc"
         else:
             print("Calculating one hour probabilities...")
             probcalc_exec = "probcalcSUBSET"
-        
+
         args = "/lustre/work/aucolema/enkfDART/src/{} <{} >probs.out".format(probcalc_exec, fname)
         try:
             subprocess_cmd(args)
@@ -382,6 +409,118 @@ class Subset:
                                 return self.calcProbs(members)
         return
 
+    def calcProbs(self, members):
+        """
+        Runs the fortran executable calcprobSUBSET or sixhrprobcalc to calculate
+        probabilities for any number of ensemble members. Takes
+        an input file with ensemble number, ensemble members,
+        response time, neighborhood, and prob output path.
+        """
+        S = self.getSens()
+
+        ############### calcProbs-specific error-handling methods. ############
+        def checkSuccess(sens_obj, args):
+            """
+            Checks to see if the word "SUCCESSFUL"
+            appears in the probcalc log file, indicating
+            the probability calculation was completed
+            correctly.
+            """
+            with open('probs.out') as out:
+                lowcase_out = [o.lower() for o in out]
+                success = (np.array(['successful' in s for s in lowcase_out]).any())
+            return success
+
+        def reRun(probpath, sens_obj, args):
+            """
+            Re-runs calcProbs.
+            """
+            if os.path.exists(probpath):
+                os.popen('rm {}'.format(probpath))
+            os.popen("cp {} {}".format(sens_obj.getRefFileD2(), probpath))
+            subprocess_cmd(args)
+            return
+        ############## End Error-Handling Methods ############################
+
+        # Create or navigate into probs directory
+        probdir = S.getDir() + "probs/"
+        direxists = os.path.exists(probdir)
+        if (direxists == False):
+            os.mkdir(probdir)
+        os.chdir(probdir)
+        print("Calculating probs for: ", members)
+        if len(members) == len(self._fullens):
+            fname = "fullens_probs.in"
+            probout = self._fensprob
+        else:
+            fname = "subset_probs.in"
+            probout = self._subprob
+
+#        # Format input file
+#        os.popen('echo {} > {}'.format(len(members), fname))
+#        os.popen('echo {} >> {}'.format(' '.join([str(mem) for mem in members]), fname))
+#        os.popen('echo {} >> {}'.format(str(S.getRTime()), fname))
+#        os.popen('echo {} >> {}'.format(str(self._nbr), fname))
+#        os.popen('echo {} >> {}'.format(probout, fname))
+#        print("Storing to {}".format(probout))
+
+        # Fixing Runtime bug - under construction!
+#        args = [self._modpath + "/create_probcalc_inputfile.bash",
+#                fname + '\n',
+#                str(len(members)) + '\n',
+#                ' '.join([str(mem) for mem in members]) + '\n',
+#                str(S.getRTime()) + '\n',
+#                str(self._nbr) + '\n', probout + '\n']
+
+        args = [self._modpath + "/create_probcalc_inputfile.bash"]
+        args.append(fname)
+        args.append(str(len(members)))
+        args.append(' '.join([str(mem) for mem in members]))
+        args.append(str(S.getRTime()))
+        args.append(str(self._nbr))
+        args.append(probout)
+        print(args)
+        subprocess.check_call(args)
+
+        # Initialize probfile
+        if os.path.exists(probout):
+            os.popen('rm {}'.format(probout))
+        os.popen("cp {} {}".format(S.getRefFileD2(), probout))
+
+        # Run fortran executable
+        # TO-DO: figure out why this fails when submitted as a job
+        if S.getSixHour():
+            print("Calculating six hour probabilities...")
+            probcalc_exec = "sixhrprobcalc"
+        else:
+            print("Calculating one hour probabilities...")
+            probcalc_exec = "probcalcSUBSET"
+
+        args = "/lustre/work/aucolema/enkfDART/src/{} <{} >probs.out".format(probcalc_exec, fname)
+        try:
+            subprocess_cmd(args)
+        except OSError:
+            # Try again - sometimes this executable is finicky
+            try:
+                reRun(probout, S, args)
+            except:
+                print('probcalc failed twice. Continue to error checks.')
+
+        # Check to make sure it ran correctly
+        if os.path.exists(probout) == False:
+            print('probcalc failed. Re-running.')
+            reRun(probout, S, args)
+
+        # This can get stuck in an infinite loop if something is
+        # fundamentally wrong with the configuration... But it's
+        # a risk we're gonna have to take
+        success = checkSuccess(S, args)
+        while success == False:
+            reRun(probout, S, args)
+            success = checkSuccess(S, args)
+
+        return
+
     def researchPlotProbs(self, use_subset):
         """
         Calls plotProbs from research_plotting library. Passes
@@ -433,26 +572,26 @@ class Subset:
         rfunclabel = S.getRString().replace(' ','').lower()
         dirdate = str(yr) + str(mo) + str(day) + str(hr)
         research_plotting.plotSixPanels(dirdate, storm_reports,
-                                        self.getSubMembers(), 
+                                        self.getSubMembers(),
                                         sixhour=S.getSixHour(),
-                                        time=S.getRTime(), 
+                                        time=S.getRTime(),
                                         subsettype=rfunclabel,
                                         nbrhd=self._nbr)
         return
 
-    def storePracPerf(self, pperfpath, sigma=2):
-        """
-        Runs storePracPerf() from post_process module
-        using time data from the subset obj and stores
-        to netcdf path specified with pperfpath. Optionally
-        alter sigma to be used in gaussian filter.
-        Defaults to 2 which is operational norm.
-        """
-        S = self.getSens()
-        # Calculate pperf for hour before, of, and after response time
-        fhrs = [S.getRTime()-1, S.getRTime(), S.getRTime()+1]
-        storePracPerf(S.getRunInit(), fhrs, pperfpath, sigma=sigma)
-        return
+    # def storePracPerf(self, pperfpath, sigma=2):
+    #     """
+    #     Runs storePracPerf() from post_process module
+    #     using time data from the subset obj and stores
+    #     to netcdf path specified with pperfpath. Optionally
+    #     alter sigma to be used in gaussian filter.
+    #     Defaults to 2 which is operational norm.
+    #     """
+    #     S = self.getSens()
+    #     # Calculate pperf for hour before, of, and after response time
+    #     fhrs = [S.getRTime()-1, S.getRTime(), S.getRTime()+1]
+    #     storePracPerf(S.getRunInit(), fhrs, pperfpath, sigma=sigma)
+    #     return
 
     def storeUHStats(self, outpath, pperfpath, reliabilityobpath):
         """
@@ -621,19 +760,19 @@ class Subset:
                         'Full_Ens_FSS_Total', 'Full_Ens_FSS_Rbox',
                         'Subset_FSS_Total', 'Subset_FSS_Rbox',
                         'Prac_Perf_Sigma', 'Neighborhood',
-                        'Response_Thresh']
+                        'Response_Thresh', 'Sub_Members']
 #                        'Full_Ens_Reliability_Total',
 #                        'Full_Ens_Reliability_Rbox', 'Subset_Reliability_Total',
 #                        'Subset_Reliability_Rbox']
                 outfile_writer = csv.writer(outfile, delimiter=',')
                 outfile_writer.writerow(cols)
             # Add row valid for current subset
-            entry = [str(S.getRunInit()), S.getSensTime(), self._subsize, 
-                     self._analysis_type, self._sensvars, 
+            entry = [str(S.getRunInit()), S.getSensTime(), self._subsize,
+                     self._analysis_type, self._sensvars,
                      list(self._methodchoices.keys())[self._method-1],
                      self._percent, S.getRString(), S.getRTime(), S.getRbox(),
                      f_fss_tot, f_fss_rbox, s_fss_tot, s_fss_rbox,
-                     sig[0], self._nbr, self._thresh]
+                     sig[0], self._nbr, self._thresh, self.getSubMembers()]
 #            (prob_bins, f_fcstfreq_tot, f_ob_hr_tot),
 #                     (prob_bins, f_fcstfreq_rbox, f_ob_hr_rbox),
 #                     (prob_bins, s_fcstfreq_tot, s_ob_hr_tot),

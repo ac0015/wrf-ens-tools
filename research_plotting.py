@@ -358,7 +358,7 @@ def plotProbs(probpath, wrfrefpath, rbox, time, nbrhd, outpath='', subset=False)
         ax.set_extent([llon-10.0, ulon+10.0, llat-5.0, ulat+5.0])
         # Plot probs
         cflevels = np.linspace(0., 100., 21)
-        prob = ax.contourf(lons, lats, gaussian_filter(problist[i], 1), cflevels, transform=ccrs.PlateCarree(),
+        prob = ax.contourf(lons, lats, gaussian_filter(problist[i], 7.5), cflevels, transform=ccrs.PlateCarree(),
                            cmap=nclcmaps.cmap('precip3_16lev'), alpha=0.7, antialiased=True)
         fig.colorbar(prob, fraction=0.046, pad=0.04, orientation='horizontal', label='Probability (Percent)')
         # Format titles and figure names

@@ -319,9 +319,10 @@ c$$  11/20/2018
       real grad1mean,grad2mean,grad3mean,grad4mean
       real grad1,grad2,grad3,grad4,rumean,rvmean,ruu,rvv
       integer is,ie,js,je
-      integer RR,numresp
+      integer RR,numresp,uhthresh,dbzthresh
       character*9 filer
-      integer iddbzavg,iddbzmax,iduhavg,iduhmax,idpcp,idwspd,mem
+      integer iddbzavg,iddbzmax,iduhavg,iduhmax,idpcp,idwspd,iduhcov,mem
+      integer iddbzcov
 
       real dbzavg
       real windavg
@@ -329,6 +330,8 @@ c$$  11/20/2018
       real dbzmax
       real uhavg
       real uhmax
+      real uhcov
+      real dbzcov
       real LONis,LONie,LATjs,LATje
 
       real dbzavgMEM
@@ -337,6 +340,8 @@ c$$  11/20/2018
       real dbzmaxMEM
       real uhavgMEM
       real uhmaxMEM
+      real uhcovMEM
+      real dbzcovMEM 
       real gobvar300,gobvar500,gobvar700,gobvar850
       real gobvar925
       real tobvar300,tobvar500,tobvar700,tobvar850
@@ -350,7 +355,7 @@ c$$  11/20/2018
       logical scatter, exists
       integer sensvar
       integer rix,rjx,rkx
-      integer fidr
+      integer fidr, npts
       real fmiss
 
       real, pointer :: dbzmaxvec(:)
@@ -359,6 +364,8 @@ c$$  11/20/2018
       real, pointer :: uhmaxvec(:)
       real, pointer :: pcpvec(:)
       real, pointer :: windavgvec(:)
+      real, pointer :: uhcovvec(:)
+      real, pointer :: dbzcovvec(:)
 
       real, pointer::qvapornext(:,:,:)
       real, pointer::dbznext(:,:,:)
@@ -407,6 +414,8 @@ c$$  11/20/2018
       real, pointer::wspdnext(:,:)
       real uhmaxmean
       real dbzmaxmean
+      real uhcovmean
+      real dbzcovmean
 
       integer iunitwritemean,cc
       integer, pointer::levels(:)
@@ -432,6 +441,14 @@ c$$ Optional add on - save member response vectors to netCDF
 c$$  by setting scatter to true
 
       read*,scatter 
+      
+c$$ UH Threshold (only for UH Coverage)
+
+      read*,uhthresh
+     
+c$$ DBZ Threshold (only for DBZ Coverage)
+
+      read*,dbzthresh
 
 c$$$ Initialize constants
 
@@ -833,6 +850,8 @@ c$$$  Get response grid dims
       allocate(uhmaxvec(ensnum))
       allocate(pcpvec(ensnum))
       allocate(windavgvec(ensnum))
+      allocate(uhcovvec(ensnum))
+      allocate(dbzcovvec(ensnum))
 
 c$$$ Response mean allocations
 
@@ -945,6 +964,24 @@ c$$ First, define response variables
      &              'm/s')
                rcode = nf_put_att_real(fidr,idwspd,'_FillValue',
      &              nf_float,1,fmiss)
+     
+               rcode = nf_def_var(fidr,'UH_COV',nf_float,
+     &              1,mem,iduhcov)
+               rcode = nf_put_att_text(fidr,iduhcov, 'description', 33,
+     &              'UH Coverage in response function box')
+               rcode = nf_put_att_text(fidr,iduhcov,'units',9,
+     &              'm**2/s**2')
+               rcode = nf_put_att_real(fidr,iduhcov,'_FillValue',
+     &              nf_float,1,fmiss)
+     
+               rcode = nf_def_var(fidr,'DBZ_COV',nf_float,
+     &              1,mem,iddbzcov)
+               rcode = nf_put_att_text(fidr,iddbzcov, 'description', 33,
+     &              'Reflectivity Coverage in response function box')
+               rcode = nf_put_att_text(fidr,iddbzcov,'units',9,
+     &              'dBZ')
+               rcode = nf_put_att_real(fidr,iddbzcov,'_FillValue',
+     &              nf_float,1,fmiss)
 
                 call close_file(fidr)
 
@@ -987,7 +1024,7 @@ c$$$ Beginning of loop through each time
 c$$$  to calculate 6-hr response means
 c$$$ For speed, only calculating means at
 c$$$   response time but can change later
-      do cc=timer-5,timer
+      do cc=1,6
 
       write(time, '(i2)') cc
       print*, "Time for response mean"
@@ -1073,6 +1110,12 @@ c$$$  entire six hour time frame.
           dbzmaxMEM = MAXVAL(dbznext(is:ie,js:je,1))
       end if
       
+      npts = COUNT((uhnext(is:ie,js:je) .GT. uhthresh))
+      uhcovMEM=uhcovMEM+npts
+      
+      npts = COUNT((dbznext(is:ie,js:je,1) .GT. dbzthresh))
+      dbzcovMEM=dbzcovMEM+npts
+      
       uphelresponse=uphelresponse+uhnext
       dbzresponse=dbzresponse+dbznext
       pcptotresponse=pcptotresponse+rainncnext
@@ -1083,7 +1126,8 @@ C$$$ End time loop
 
       dbzmaxmean=dbzmaxmean+dbzmaxMEM
       uhmaxmean=uhmaxmean+uhmaxMEM
-      
+      uhcovmean=uhcovmean+uhcovMEM
+      dbzcovmean=dbzcovmean+dbzcovMEM
       
       print*,'got all vars for member'
       print*,1
@@ -1095,6 +1139,8 @@ c$$$ Read in all other ens members, summing data for mean
       
       uhmaxMEM=0.0
       dbzmaxMEM=0.0
+      uhcovMEM=0.0
+      dbzcovMEM=0.0
       
 c$$$ Beginning of loop through each time
 c$$$  to calculate 6-hr response means
@@ -1186,6 +1232,17 @@ c$$$ Increment max response functions
       if (MAXVAL(dbznext(is:ie,js:je,1)) .GT. dbzmaxMEM) then
           dbzmaxMEM = MAXVAL(dbznext(is:ie,js:je,1))
       end if
+
+C$$$ Increment coverage response functions      
+       npts = COUNT((uhnext(is:ie,js:je) .GT. uhthresh))
+       print*, 'Number of points in rbox exceeding uh threshold for mem'
+       print*, npts
+       uhcovMEM=uhcovMEM+npts
+      
+       npts = COUNT((dbznext(is:ie,js:je,1) .GT. dbzthresh))
+       dbzcovMEM=dbzcovMEM+npts
+       print*,'Number of points in rbox exceeding dbz threshold for mem'
+       print*, npts
       
       uphelresponse=uphelresponse+uhnext
       dbzresponse=dbzresponse+dbznext
@@ -1227,6 +1284,8 @@ c$$$ End of loop through times
 
       dbzmaxmean=dbzmaxmean+dbzmaxMEM
       uhmaxmean=uhmaxmean+uhmaxMEM
+      uhcovmean=uhcovmean+uhcovMEM
+      dbzcovmean=dbzcovmean+dbzcovMEM
 
 c$$$ End of loop through ens members
       enddo
@@ -1337,9 +1396,13 @@ c$$      call write_variable3d(iunitwritemean,'QNICE',rix-1,
 c$$     &     rjx-1,rkx-1,cc,icenum)
 
       call close_file(iunitwritemean)
-      
-      dbzmaxmean=dbzmaxmean/(ensnum)
-      uhmaxmean=uhmaxmean/(ensnum)
+
+c$$$ Don't divide by six hours because you want mean over
+c$$$  entire 
+      dbzmaxmean=dbzmaxmean/ensnum
+      uhmaxmean=uhmaxmean/ensnum
+      uhcovmean=uhcovmean/ensnum
+      dbzcovmean=dbzcovmean/ensnum
       
       print*, "DBZ Max Mean: ", dbzmaxmean
       print*, "UH Max Mean: ", uhmaxmean
@@ -1580,7 +1643,9 @@ c$$$  6-hr response function means
       uhavg=0.0
       pcp=0.0
       windavg=0.0
-     
+      uhcov=0.0
+
+c$$$ 6-hr means are stored at the response time hour, so only open that     
       do cc=timer,timer
           print*, "Re-open response time mean file"
           print*, infilemeanR
@@ -2221,6 +2286,8 @@ c$$$ Initialize member values
       windavgMEM=0.0
       uhmaxMEM=0.0
       dbzmaxMEM=0.0
+      uhcovMEM=0.0
+      dbzcovMEM=0.0
       
       do cc=1,6
       print*, 'Current Response Member: ' // infileR(cc,m)
@@ -2398,7 +2465,22 @@ C$$$ Avg 10-m winds
          do j=js,je
             windavgMEM=windavgMEM+wspresponse(i,j)
          enddo
-      enddo      
+      enddo    
+      
+C$$$ Increment coverage response functions      
+
+c$$$ UH Coverage
+      npts = COUNT((uphelresponse(is:ie,js:je) .GT. uhthresh))
+      print*, "Number of points in rbox exceeding uh threshold for mem"
+      print*, npts
+      uhcovMEM=uhcovMEM+npts
+
+c$$$ DBZ Coverage
+      npts = COUNT((dbzresponse(is:ie,js:je,1) .GT. dbzthresh))
+      dbzcovMEM=dbzcovMEM+npts
+      print*,"Number of points in rbox exceeding dbz threshold for mem"
+      print*, npts  
+     
 c$$$ End 6-hr time loop
       enddo
       
@@ -2422,6 +2504,10 @@ c$$$ Assemble R perts from mean in column vector
       print*, "Mean Avg Accump Precip", pcp 
       print*, "Avg Wind for member", windavgMEM
       print*, "Mean Avg Wind", windavg
+      print*, "UH Coverage for member", uhcovMEM
+      print*, "Mean UH Coverage", uhcovmean
+      print*, "DBZ Coverage for member", dbzcovMEM
+      print*, "Mean DBZ Coverage", dbzcovmean
 
       evec1(1)=dbzavgMEM-dbzavg
       evec1(2)=dbzmaxMEM-dbzmaxmean
@@ -2429,6 +2515,8 @@ c$$$ Assemble R perts from mean in column vector
       evec1(4)=uhmaxMEM-uhmaxmean
       evec1(5)=pcpMEM-pcp
       evec1(6)=windavgMEM-windavg
+      evec1(7)=uhcovMEM-uhcovmean
+      evec1(8)=dbzcovMEM-dbzcovmean
       
 c$$$ Create vector of responses
 
@@ -2438,6 +2526,8 @@ c$$$ Create vector of responses
       uhmaxvec(m) = uhmaxMEM
       pcpvec(m) = pcpMEM
       windavgvec(m) = windavgMEM
+      uhcovvec(m) = uhcovMEM
+      dbzcovvec(m) = dbzcovMEM
       
 c$$$ Calculate covariances b/w response function, IC vars
       print*, evec1(rrr)
@@ -2703,6 +2793,8 @@ C$$$ Save off response vectors for each member
         call write_variable1d(fidr,'UH_MAX',ensnum,1,uhmaxvec)
         call write_variable1d(fidr,'PCP',ensnum,1,pcpvec)
         call write_variable1d(fidr,'WSPD_AVG',ensnum,1,windavgvec)
+        call write_variable1d(fidr,'UH_COV',ensnum,1,uhcovvec)
+        call write_variable1d(fidr,'DBZ_COV',ensnum,1,dbzcovvec)
 
         call close_file(fidr)
 

@@ -35,15 +35,15 @@ c$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
       real, pointer::uhprob3(:,:)
       real, pointer::wspprob(:,:)
       real, pointer::probmat(:,:,:)
-      character*67, pointer::infile(:,:)
-      character*40 outfilemean,infileinfo
+      character*67, pointer::infile(:)
+      character*30 outfilemean,infileinfo
       real basethet,levee,rdgas,rvgas,preffer
       real kap,prefcont,kapdiv,distz,rx
       integer ensnum,numtimes,iunitread,uhcnt1,uhcnt2,uhcnt3,wcnt
-      integer numpoints,i,j,k,m,t,f,ensnummax,iii,jjj
+      integer numpoints,i,j,k,m,ensnummax,iii,jjj
       integer timeinit,iunitinfo,ecnt,ibeg,iend,jbeg,jend
       integer, pointer::mems(:)
-      character*2 fhr,time
+      character*2 fhr
       character*2, pointer::sub_mem(:)
       real nbr
 
@@ -87,7 +87,7 @@ c$$$ Read outfilepath name
 
 c$$$ Allocate variable arrays
 
-      allocate(infile(6,ensnum))
+      allocate(infile(ensnum))
       allocate(sub_mem(ensnum))
 
       allocate(dbz(mix-1,mjx-1,mkx-1))
@@ -103,26 +103,14 @@ c$$$ Allocate variable arrays
       print*,'check1'
    
       sub_mem(:) = '0'
-      infile(:,:) = ''
-      print*, fhr
-      read(fhr, '(i2)') f
-      print*, f
-      do t=f-5,f
-      print*, t
+      infile(:) = ''
       do m=1,ensnum
       write(sub_mem(m), '(i2)') mems(m)
-      write(time, '(i2)') t
-c$$   get t back into i=1,2,3,4,5,6 etc. form
-c$$    by adding six and subtracting final hr
-c$$    print*, t-f+6
-      infile(t-f+6,m) = ('../mem' // trim(adjustl(sub_mem(m))) //
+      infile(m) = ('../mem' // trim(adjustl(sub_mem(m))) //
      & '/R' // trim(adjustl(sub_mem(m))) // '_' //
-     & trim(adjustl(time)) // '.out')
-      print*, infile(t-f+6, m)
+     & trim(adjustl(fhr)) // '.out')
       enddo
-      enddo
-      print*,'Built sub_mem'  
-      print*,infile   
+      print*,'Built sub_mem'     
 
       dbzprob(:,:)=0.0
       uhprob1(:,:)=0.0
@@ -131,13 +119,10 @@ c$$    print*, t-f+6
       wspprob(:,:)=0.0
 
 c$$$ Read in all ens members for probs
-      do t=1,6
       do m=1,ensnum
       
-      print*, 'Reading member', m
-      print*, ' at time', t
-      print*, infile(t,m)
-      call open_file(infile(t,m),permissr,iunitread)
+      print*, infile(m)
+      call open_file(infile(m),permissr,iunitread)
       call get_variable3d(iunitread,'REFL_10CM',mix-1,
      &     mjx-1,mkx-1,cc,dbz)
       call get_variable2d(iunitread,'UP_HELI_MAX',mix-1,
@@ -145,6 +130,7 @@ c$$$ Read in all ens members for probs
       call get_variable2d(iunitread,'WSPD10MAX',mix-1,
      &     mjx-1,cc,wsp)
       call close_file(iunitread)
+
       do i=1,mix-1
          do j=1,mjx-1
 
@@ -229,8 +215,6 @@ c$$$ Read in all ens members for probs
 
 c$$$ End of loop through ens members
       enddo
-c$$$ End of loop through times
-      enddo
       dbzprob(:,:)=(dbzprob(:,:)/ensnum)*100
       uhprob1(:,:)=(uhprob1(:,:)/ensnum)*100
       uhprob2(:,:)=(uhprob2(:,:)/ensnum)*100
@@ -267,7 +251,7 @@ c$$$ If probabilities are 100, set to 99.8 for plotting
      &     mjx-1,mkx-1,cc,probmat)
       call close_file(iunitwritemean)
 
-      print*, "SUCCESSFUL COMPLETION OF SIXHRPROBCALC"
+      print*, "SUCCESSFUL COMPLETION OF PROBCALCSUBSET"
 
       end
 
