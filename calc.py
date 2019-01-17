@@ -23,12 +23,12 @@ import csv
 import sys
 
 def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
-    '''
+    """
     A method which interpolates a function
     z(grid1x, grid1y) of a grid (grid1x, grid1y) to another
     grid (grid2x, grid2y). Returns an array from the approximated
     function of the second grid (approximation of z(grid2x, grid2y)).
-    '''
+    """
     # Pair flattened x and y values as coordinates
     coords_from = list(zip(grid1y.flatten(), grid1x.flatten()))
     Z = z.flatten()
@@ -41,13 +41,13 @@ def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
 
 def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
                          wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'):
-    '''
+    """
     Interpolates storm reports valid over a
     1-hr or 6-hr time frame to the
     native TTU WRF grid. Returns the WRF grid
     in the form of binary hits and misses based
     on SPC storm report locations.
-    '''
+    """
     #Get initialization date
     rdate = runinitdate + timedelta(hours=rtime)
     # Since reports are from 12Z - 1159Z, make sure
@@ -143,10 +143,11 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
 
         return grid
 
-def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
-    '''
-    Implementation of SPC practically perfect
-    calculations adapted from SPC code
+def calc_prac_perf_native_grid(runinitdate, sixhr, rtime, sigma=2):
+    """
+    Implementation of practically perfect probability
+    calculations from Robert Hepper's code. This calculates
+    practically perfect probabilities on the native WRF grid.
 
     Inputs
     ------
@@ -160,15 +161,14 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     rtime -------- time (in num fcst hrs
                     from runinit) to obtain six hr
                     or one hr practically perfect.
-    sigma -------- optional integer specifying sigma
+    sigma -------- optional float specifying sigma
                     to use for Gaussian filter.
-                    Operational practically perfect uses
-                    the default sgma of 2.
+
     Outputs
     -------
     returns tuple containing pract perf probs
     and lons/lats (respectively) of pperf grid
-    '''
+    """
     #Get initialization date
     runinitdatef = runinitdate.strftime('%y%m%d')
     rdate = runinitdate + timedelta(hours=rtime)
@@ -181,7 +181,134 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     print('Pullng SPC reports from ', runinitdatef)
     print('Response time ', rdate)
 
-    #Get yesterday's reports CSV file from web
+    #Get report CSV file from web
+    rptfile = runinitdatef+'_rpts_filtered.csv'
+    add = 'www.spc.noaa.gov/climo/reports/'+rptfile
+    call(['wget',add])
+
+    #Make lists of report lats and lons
+    try:
+    	with open(rptfile) as csvf:
+            r = csv.reader(csvf)
+            mylist = list(r)
+    except IOError:
+    	print('Report CSV file could not be opened.')
+    	sys.exit()
+
+    length = len(mylist)-3
+    time = [0]*length
+    lats = [0]*length
+    lons = [0]*length
+    ct = 0
+    for f in mylist:
+        if 'Time' not in f and 'Comments' not in f:
+            time[ct] = int(str(f[0])[:2])
+            lats[ct] = float(f[5])
+            lons[ct] = float(f[6])
+            ct = ct+1
+
+    # Get WRF lats/lons as pperf grid
+    wrffile = '/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'
+    dat = Dataset(wrffile)
+    wrflon = dat.variables['XLONG'][0]
+    wrflat = dat.variables['XLAT'][0]
+    dat.close()
+
+    #If there aren't any reports, practically perfect is zero across grid
+    if length == 0:
+    	pperf = np.zeros_like(wrflon)
+
+    #Otherwise, let's grid the reports
+    else:
+        # If six hour, mask reports by valid times in window
+        if sixhr:
+            hour = rdate.hour
+            hours = [(hour - i)%24 for i in range(1,7)]
+            mask = [(hr in hours) for hr in time]
+            print('Reports valid {} to {}'.format(hours[-1], hours[0]))
+        else:
+            hour = rdate.hour
+            mask = [(hr == (hour-1)%24) for hr in time]
+            print('Reports valid {} to {}'.format((hour-1)%24,hour))
+        try:
+            #Set up empty grid onto correct projection
+            grid = np.zeros_like(wrflon)
+            NDFD = pyproj.Proj("+proj=lcc +lat_1=25 +lat_2=25 +lon_0=-95 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+
+            # Convert lat/lon grid into projection space
+            X, Y = NDFD(wrflon, wrflat)
+            WRFX, WRFY = NDFD(wrflon, wrflat)
+
+            # Convert lat/lon reports into projection space
+            x, y = NDFD(lons, lats)
+
+            #Create KD-Tree for effecient lookup
+            gpoints = np.array(list(zip(X.ravel(), Y.ravel())))
+            gtree = sp.spatial.cKDTree(gpoints)
+
+            # Run the KD-Tree to get distances to nearest gridbox and then index of nearest grid point
+            dists, inds = gtree.query(np.array(list(zip(x, y))), distance_upper_bound=1000000000.)
+
+            # Convert index of 1D array into index of 2D lat/lon array
+            xind, yind = np.unravel_index(inds[mask], X.shape)
+
+            # Loop through all points and increment that grid cell by 1
+            for xi, yi in zip(xind, yind):
+                grid[xi, yi] = 1
+
+        	# Gaussian smoother over our grid to create practically perfect probs
+            pperf = ndimage.gaussian_filter(grid, sigma=sigma, order=0)
+
+        except:
+            pperf = np.zeros_like(wrflon)
+
+    #Remove report CSV file
+    os.remove(rptfile)
+    print("Practically Perfect min/max: ", np.min(pperf), ' , ', np.max(pperf))
+
+    return pperf, wrflon, wrflat
+
+def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2):
+    """
+    Implementation of practically perfect probability
+    calculations adapted from Robert Hepper's code.
+    Practically perfect probs are calculated on a grid
+    with 80-km grid spacing and then interpolated to the
+    native WRF grid.
+
+    Inputs
+    ------
+    runinitdate --- datetime obj for
+                    model initialization being
+                    used.
+    sixhr --------- boolean specifying whether
+                    to calculate practically perfect
+                    probs over six hr time window or
+                    use one hr time window.
+    rtime --------- time (in num fcst hrs
+                    from runinit) to obtain six hr
+                    or one hr practically perfect.
+    sigma --------- optional float specifying sigma
+                    to use for Gaussian filter.
+
+    Outputs
+    -------
+    returns tuple containing pract perf probs
+    and lons/lats (respectively) of pperf grid
+    """
+    #Get initialization date
+    runinitdatef = runinitdate.strftime('%y%m%d')
+    rdate = runinitdate + timedelta(hours=rtime)
+    # Since reports are from 12Z - 1159Z, make sure
+    #  we are grabbing the correct date.
+    if (rtime > 23) & (runinitdate.hour == 12):
+        runinitdatef = (runinitdate + timedelta(days=1)).strftime('%y%m%d')
+    elif (rtime > 35) & (runinitdate.hour == 0):
+        runinitdatef = (runinitdate + timedelta(days=1)).strftime('%y%m%d')
+    print('Pullng SPC reports from ', runinitdatef)
+    print('Response time ', rdate)
+
+    #Get report CSV file from web
     rptfile = runinitdatef+'_rpts_filtered.csv'
     add = 'www.spc.noaa.gov/climo/reports/'+rptfile
     call(['wget',add])
@@ -215,11 +342,12 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     f.close()
 
     # Get WRF lats/lons as pperf grid
-    wrffile = '/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'
-    dat = Dataset(wrffile)
+    ppfile = '/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'
+    dat = Dataset(ppfile)
     wrflon = dat.variables['XLONG'][0]
     wrflat = dat.variables['XLAT'][0]
     dat.close()
+    mod = 24
 
     #If there aren't any reports, practically perfect is zero across grid
     if length == 0:
@@ -229,15 +357,13 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
         # If six hour, mask reports by valid times in window
         if sixhr:
             hour = rdate.hour
-            hours = [(hour - i)%24 for i in range(1,7)]
+            hours = [(hour - i)%mod for i in range(1,7)]
             mask = [(hr in hours) for hr in time]
+            print("Reports valid {} to {}".format(hours[-1], hours[0]))
         else:
             hour = rdate.hour
-            mask = [(hr == (hour-1)%24) for hr in time]
-            print('Reports valid {} to {}'.format((hour-1)%24,hour))
-            #print('Report hours from reports used:', np.array(time)[mask])
-            #print(mask)
-            #print(time)
+            mask = [(hr == (hour-1)%mod) for hr in time]
+            print('Reports valid {} to {}'.format((hour-1)%mod,hour))
         try:
             #Set up empty grid onto correct projection
             grid = np.zeros_like(lon)
@@ -246,7 +372,6 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
             # Convert lat/lon grid into projection space
             X, Y = NDFD(lon, lat)
             WRFX, WRFY = NDFD(wrflon, wrflat)
-            #print(WRFX.shape, WRFY.shape)
             # Convert lat/lon reports into projection space
             x, y = NDFD(lons, lats)
 
@@ -263,14 +388,13 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
             # Loop through all points and increment that grid cell by 1
             for xi, yi in zip(xind, yind):
                 grid[xi, yi] = 1
-            #print(grid)
 
         	# Gaussian smoother over our grid to create practically perfect probs
             tmppperf = ndimage.gaussian_filter(grid,sigma=sigma, order=0)
 
             # Interpolate to WRF grid
             pperf = bilinear_interp(X, Y, WRFX, WRFY, tmppperf)
-            #print(np.shape(pperf))
+            print('Min/Max Prac Perf: ', np.min(pperf), '/', np.max(pperf))
         except:
             pperf = np.zeros_like(wrflon)
 
@@ -281,7 +405,7 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     return pperf, wrflon, wrflat
 
 def dist_mask(xind, yind, xpts, ypts, r):
-    '''
+    """
     Calculates a mask that evaluates to true in locations
     where gridpoints are within a given radius and false
     in locations where gridpoints are outside the radius.
@@ -298,7 +422,7 @@ def dist_mask(xind, yind, xpts, ypts, r):
     -------
     returns a mask of shape xpts.shape that contains True's
     where the grid is less than the given radius
-    '''
+    """
     return (np.sqrt(((xind - xpts)**2) + ((yind - ypts)**2)) <= r)
 
 #############################################################
@@ -306,48 +430,61 @@ def dist_mask(xind, yind, xpts, ypts, r):
 #############################################################
 
 def FSS(probpath, obspath, fhr, var='updraft_helicity',
-        thresh=25., rboxpath=None):
-    '''
+        thresh=25., rboxpath=None, prob_var='P_HYD',
+        smooth_w_sigma=None):
+    """
     Calculates fractional skill score for a probabilstic
     ensemble forecast, Obs need to be pre-interpolated
     to native model grid.
 
     Inputs
     ------
-    probpath - path to netCDF file containing
-                probability values. IMPORTANT
-                NOTE - prob file is expected to
-                be organized like in probcalcSUBSET.f
-                 Variable P_HYD[0,i,:,:]:
-                  i         Var
-                 [0]   Refl > 40 dBZ probs
-                 [1]   UH > 25 m2/s2 probs
-                 [2]   UH > 40 m2/s2 probs
-                 [3]   UH > 100 m2/s2 probs
-                 [4]   Wind Speed > 40 mph probs
-    obspath -- path to netCDF file containing
-                observation verification values.
-                Currently, practically perfect
-                for verifying UH is the only
-                verification type supported.
-    var ------ string describing variable to verify.
-                Only supports 'updraft_helicity'
-                option as of right now.
-    thresh --- float describing threshold of
-                variable to use when
-                pulling probs. Choices
-                for UH are 25, 40, and 100 m2/s2.
-                Choices for Reflectivity and
-                Win Speed are 40 (dbz) and
-                40 (mph) respectively.
-    rboxpath - optional path to sensitivity calc
-                input file. Only needed if using
-                FSS to verify subsets. Otherwise
-                leave as None.
+    probpath ---------- path to netCDF file containing
+                        probability values. IMPORTANT
+                        NOTE - prob file is expected to
+                        be organized like in probcalcSUBSET.f
+                            Variable P_HYD[0,i,:,:]:
+                                i         Var
+                            [0]   Refl > 40 dBZ probs
+                            [1]   UH > 25 m2/s2 probs
+                            [2]   UH > 40 m2/s2 probs
+                            [3]   UH > 100 m2/s2 probs
+                            [4]   Wind Speed > 40 mph probs
+    obspath ----------- path to netCDF file containing
+                        observation verification values.
+                        Currently, practically perfect
+                        for verifying UH is the only
+                        verification type supported.
+    var --------------- string describing variable to verify.
+                        Only supports 'updraft_helicity'
+                        option as of right now.
+    thresh ------------ float describing threshold of
+                        variable to use when
+                        pulling probs. Choices
+                        for UH are 25, 40, and 100 m2/s2.
+                        Choices for Reflectivity and
+                        Win Speed are 40 (dbz) and
+                        40 (mph) respectively.
+    rboxpath ---------- optional path to sensitivity calc
+                        input file. Only needed if using
+                        FSS to verify subsets. Otherwise
+                        leave as None.
+    prob_var ---------- name of netCDF variable in which
+                        probabilities are stored (as string).
+                        If using probability calculations from
+                        this library, probabilities will by default
+                        be stored in 'P_HYD'.
+    smooth_w_sigma ---- optional smoothing parameter. If you
+                        want to smooth the ensemble probs,
+                        replace None default with a sigma
+                        value for the standard deviation of
+                        the Gaussian kernel to use. Otherwise
+                        FSS is calculated with the raw ensemble
+                        probabilities.
 
     Outputs
     -------
-    Returns fss_all, fss_rbox, and sigma back as a
+    returns fss_all, fss_rbox, and sigma back as a
     tuple.
 
     fss_all -- fractional skill score as float for
@@ -357,7 +494,7 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
                 subsets, then returns 9e9.
     sigma ---- sigma value of practically perfect stored
                 in obspath.
-    '''
+    """
     # Open probabilistic forecast and observational datasets
     probdat = Dataset(probpath)
     obsdat = Dataset(obspath)
@@ -381,29 +518,33 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
     probvar = probdat.variables['P_HYD'][0]
     d = probinds[var]
     probs = probvar[d[int(thresh)]]
+
+    # If sigma was passed, use it to smooth probs
+    if smooth_w_sigma is not None:
+        probs = ndimage.gaussian_filter(probs, sigma=smooth_w_sigma)
+
     # First calculate FBS (Fractions Brier Score) on whole grid
     wrf.disable_xarray()
     lats = wrf.getvar(probdat, 'lat')
     lons = wrf.getvar(probdat, 'lon')
     npts = len(lats[:,0]) * len(lons[0,:])
-    #prob_gt_than = (probs >= probthresh)
     fbs = 0.
     fbs_worst = 0.
     print('Max ens probs and max ob probs: ', np.max(probs), np.max(obs[obind]))
+
+    # Calculate FBS at each grid point and aggregate.
     if (np.max(obs[obind]) > 0.) or (np.max(probs) > 0.):
-        #print(np.shape(probs), np.shape(obs[obind]))
         for i in range(len(lons[0,:])):
             for j in range(len(lats[:,0])):
                 fbs += (probs[j,i] - obs[obind,j,i])**2
                 fbs_worst += probs[j,i]**2 + obs[obind,j,i]**2
-                #print(probs[j,i], obs[obind,j,i])
         print('FBS: ', fbs)
         fbs, fbs_worst = fbs/npts, fbs_worst/npts
         # Use FBS and FBS worst to calculate FSS for whole grid
         fss_all = 1 - (fbs/fbs_worst)
         print("FSS Total and num points: ", fss_all, ',', npts)
 
-        # Calculate FSS within response box if using sensitivity
+        # Calculate FSS within response box if using ensemble sensitivity
         if rboxpath is not None:
             sensin = np.genfromtxt(rboxpath, dtype=str)
             rbox = sensin[4:8]
@@ -411,11 +552,11 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
             lonmask = (lons > llon) & (lons < ulon)
             latmask = (lats > llat) & (lats < ulat)
             mask = lonmask & latmask
+            print("Min/Max Lon:", np.min(lons[lonmask]), np.max(lons[lonmask]))
+            print("Min/Max Lat:", np.min(lats[latmask]), np.max(lats[latmask]))
             masked_probs = probs[mask]
             masked_obs = obs[obind][mask]
-            npts = len(probs[mask])
-            fbs = 0.
-            fbs_worst = 0.
+            npts = len(masked_probs); fbs = 0.; fbs_worst = 0.
             for i in range(len(masked_probs)):
                 fbs += (masked_probs[i] - masked_obs[i])**2
                 fbs_worst += masked_probs[i]**2 + masked_obs[i]**2
@@ -434,7 +575,7 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
 
 def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
                 thresh=25., rboxpath=None, sixhr=False, nbrhd=0.):
-    '''
+    """
     Calculates reliability for a probabilstic
     ensemble forecast and returns it. Obs
     need to be pre-interpolated to native model grid.
@@ -483,11 +624,12 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
     Outputs
     -------
     returns an array of probability bins, forecast frequencies for the total domain
-     of each bin, observation hit rates for each bin, forecast frequencies for the
-     response box for each bin, observation hit rates for the response box for each
-     bin (if not verifying subsets, will return arrays of zeros for the response box
-     metrics).
-    '''
+    of each bin, observation hit rates for each bin, forecast frequencies for the
+    response box for each bin, observation hit rates for the response box for each
+    bin (if not verifying subsets, will return arrays of zeros for the response box
+    metrics).
+    """
+    print('Starting reliability calculations...')
     prob_bins = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     # Open probabilistic forecast and observational datasets
     probdat = Dataset(probpath)
@@ -533,7 +675,6 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
         latmask = (lats > llat) & (lats < ulat)
         mask = lonmask & latmask
         masked_probs = fcstprobs[mask]
-        masked_obs = grid[mask]
 
     for i in range(len(prob_bins)):
         hits = 0
@@ -549,8 +690,9 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
                 masked_grid = np.ma.masked_array(grid, mask=~mask)
                 if (masked_grid == 1).any():
                     hits += 1
-            ob_hr_tot[i] = hits / len(list(zip(fcstinds[0].ravel(),
+            tot =  len(list(zip(fcstinds[0].ravel(),
                                         fcstinds[1].ravel())))
+            ob_hr_tot[i] = hits / tot
             print("Total Hits/Tot: ", hits, tot)
         # If verifying subsets, we want the reliability inside the response box
         if rboxpath is not None:
@@ -565,8 +707,9 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
                     masked_grid = np.ma.masked_array(grid, mask=~mask)
                     if (masked_grid == 1).any():
                         hits += 1
-                ob_hr_tot[i] = hits / len(list(zip(fcstinds[0].ravel(),
+                tot = len(list(zip(fcstinds[0].ravel(),
                                             fcstinds[1].ravel())))
+                ob_hr_tot[i] = hits / tot
                 print("Rbox Hits/Total: ", hits, tot)
 
     totmask = (ob_hr_tot == 9e9)
@@ -627,3 +770,159 @@ def mse(predictions, targets, axis=None, nan=False):
     else:
         mse_data = np.nanmean(((predictions - targets) ** 2), axis=axis)
     return mse_data
+
+
+def scipyReliability(probpath, runinitdate, fhr, obpath=None,
+                var='updraft_helicity', thresh=25., rboxpath=None,
+                sixhr=False, nbrhd=0.):
+    """
+    Calculates reliability for a probabilstic
+    ensemble forecast and returns it. Obs
+    need to be pre-interpolated to native model grid.
+
+    Inputs
+    ------
+    probpath --- path to netCDF file containing
+                 probability values. IMPORTANT
+                 NOTE - prob file is expected to
+                 be organized like in probcalcSUBSET.f
+                  Variable P_HYD[0,i,:,:]:
+                   i         Var
+                  [0]   Refl > 40 dBZ probs
+                  [1]   UH > 25 m2/s2 probs
+                  [2]   UH > 40 m2/s2 probs
+                  [3]   UH > 100 m2/s2 probs
+                  [4]   Wind Speed > 40 mph probs
+    obpath ------ path to binary observations gridded to
+                  the native WRF domain. If set to None,
+                  will automatically calculate gridded obs.
+    runinitdate - datetime obj describing model initiation
+                  time. Used to pull correct storm reports.
+    fhr --------- integer describing response time in number
+                  of forecast hours.
+    var --------- string describing variable to verify.
+                  Only supports 'updraft_helicity'
+                  option as of right now.
+    thresh ------ float describing threshold of
+                  variable to use when
+                  pulling probs. Choices
+                  for UH are 25, 40, and 100 m2/s2.
+                  Choices for Reflectivity and
+                  Wind Speed are 40 (dbz) and
+                  40 (mph) respectively.
+    rboxpath ---- optional path to sensitivity calc
+                  input file. Only needed if verifying
+                  subsets. Otherwise
+                  leave as None.
+    sixhr ------- option of calculating 1 hours worth
+                  or 6 hours worth of SPC storm reports.
+                  If set to True, assuming probabilities are
+                  also valid over a 6-hour period.
+    nbrhd ------- neighborhood distance in km used with the
+                  probability calculations.
+
+    Outputs
+    -------
+    returns an array of probability bins, forecast frequencies for the total domain
+    of each bin, observation hit rates for each bin, forecast frequencies for the
+    response box for each bin, observation hit rates for the response box for each
+    bin (if not verifying subsets, will return arrays of zeros for the response box
+    metrics).
+    """
+    print('Starting reliability calculations...')
+    prob_bins = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    # Open probabilistic forecast and observational datasets
+    probdat = Dataset(probpath)
+
+    # Choose correct indices based on variable and threshold
+    probinds = {'reflectivity' : {40 : 0},
+                'updraft_helicity' : {25 : 1, 40 : 2, 100 : 3},
+                'wind_speed' : {40 : 4}}
+
+    if var == 'updraft_helicity':
+        if obpath is not None:
+            dat = Dataset(obpath)
+            times = dat.variables['fhr'][:]
+            inds = np.where(times == fhr)
+            grid = dat.variables['nearest_neighbor'][inds][0]
+        else:
+            grid = nearest_neighbor_spc(runinitdate, sixhr, fhr, nbrhd=0.)
+    else:
+        raise ValueError('Sorry, support for {} is not yet built in.'.format(var))
+    # Pull and splice probability variable
+    probvar = probdat.variables['P_HYD'][0]
+    d = probinds[var]
+    fcstprobs = probvar[d[int(thresh)]]
+    wrf.disable_xarray()
+    lats = wrf.getvar(probdat, 'lat')
+    lons = wrf.getvar(probdat, 'lon')
+    dx = probdat.DX / 1000. # dx in km
+    # Get arrays of x and y indices for distance calculations
+    yinds, xinds = np.meshgrid(np.arange(len(lats[:])), np.arange(len(lons[0,:])))
+
+    # Sort probabilities into bins
+    fcstfreq_tot = np.zeros((len(prob_bins)))   # N probs falling into bin for whole domain
+    fcstfreq_rbox = np.zeros((len(prob_bins)))  # N probs in rbox falling into bin
+    ob_hr_tot = np.zeros((len(prob_bins)))      # Ob hit rate for bin and whole domain
+    ob_hr_rbox = np.zeros((len(prob_bins)))     # Ob hit rate for bin in rbox
+
+    # Create mask for isolating response box in grid if applicable
+    if rboxpath is not None:
+        sensin = np.genfromtxt(rboxpath, dtype=str)
+        rbox = sensin[4:8]
+        llon, ulon, llat, ulat = np.array(rbox, dtype=float)
+        lonmask = (lons > llon) & (lons < ulon)
+        latmask = (lats > llat) & (lats < ulat)
+        mask = lonmask & latmask
+        masked_probs = fcstprobs[mask]
+
+    for i in range(len(prob_bins)):
+        hits = 0
+        prob = prob_bins[i]
+        fcstinds = np.where((np.abs(fcstprobs - prob) <= 10) & (fcstprobs < prob))
+        fcstfreq_tot[i] = len(fcstinds[0])
+        if fcstfreq_tot[i] == 0:
+            ob_hr_tot[i] = 9e9
+        else:
+            r = nbrhd / dx
+            hits = np.sum(ndimage.convolve(fcstinds, weights=grid))
+            print(hits)
+            # for fcstind in list(zip(fcstinds[0].ravel(), fcstinds[1].ravel())):
+            #     r = nbrhd/dx
+            #     mask = dist_mask(fcstind[1], fcstind[0], xinds, yinds, r)
+            #     masked_grid = np.ma.masked_array(grid, mask=~mask)
+            #     if (masked_grid == 1).any():
+            #         hits += 1
+            tot =  len(list(zip(fcstinds[0].ravel(),
+                                        fcstinds[1].ravel())))
+            ob_hr_tot[i] = hits / tot
+            print("Total Hits/Tot: ", hits, tot)
+        # If verifying subsets, we want the reliability inside the response box
+        if rboxpath is not None:
+            fcstinds = np.where((np.abs(masked_probs - prob) <= 10) & (masked_probs < prob))
+            print(np.shape(fcstinds))
+            fcstfreq_rbox[i] = len(fcstinds[0])
+            if fcstfreq_rbox[i] == 0:
+                ob_hr_rbox[i] = 9e9
+            else:
+                r = nbrhd / dx
+                hits = np.sum(ndimage.convolve(fcstinds, weights=grid))
+                # for fcstind in list(zip(fcstinds[0].ravel(), fcstinds[1].ravel())):
+                #     r = nbrhd/dx
+                #     mask = dist_mask(fcstind[1], fcstind[0], xinds, yinds, r)
+                #     masked_grid = np.ma.masked_array(grid, mask=~mask)
+                #     if (masked_grid == 1).any():
+                #         hits += 1
+                tot = len(list(zip(fcstinds[0].ravel(),
+                                            fcstinds[1].ravel())))
+                ob_hr_tot[i] = hits / tot
+                print("Rbox Hits/Total: ", hits, tot)
+
+    totmask = (ob_hr_tot == 9e9)
+    rboxmask = (ob_hr_rbox == 9e9)
+    fcst_freq_all_masked = np.ma.masked_array(fcstfreq_tot, mask=totmask)
+    ob_hr_all_masked = np.ma.masked_array(ob_hr_tot, mask=totmask)
+    fcst_freq_rbox_masked =  np.ma.masked_array(fcstfreq_rbox, mask=rboxmask)
+    ob_hr_rbox_masked =  np.ma.masked_array(ob_hr_rbox, mask=rboxmask)
+
+    return prob_bins, fcst_freq_all_masked, ob_hr_all_masked, fcst_freq_rbox_masked, ob_hr_rbox_masked

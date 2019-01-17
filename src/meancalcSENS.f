@@ -118,7 +118,7 @@ c$$$ before running this program.
 
 c$$$ Initialize constants
 
-      ecnt=3
+      ecnt=42
 
       print*,ecnt
 
@@ -141,7 +141,8 @@ c$$$ Initialize constants
 
       call open_file(infileinfo,permissr,iunitinfo)
 c$$      numtimes = get_dimlen(iunitinfo,'Time')
-      numtimes=48
+c$$   Pull 14 time steps such that sens time can be 1-14
+      numtimes=14
       rcode = nf_get_att_int(iunitinfo, nf_global,
      &                    'WEST-EAST_GRID_DIMENSION', mix)
       rcode = nf_get_att_int(iunitinfo, nf_global,

@@ -15,27 +15,30 @@ from subset import Subset
 import matplotlib.gridspec as gridspec
 import matplotlib.cm as cm
 import nclcmaps
+import cartopy.crs as ccrs
+import cartopy.feature as cfeat
+import cmocean
 
 def storeEnsStats(ensprobpath, obpath, reliabilityobpath,
-                  outpath, runinit, fhr, 
-                  probvar='updraft_helicity', probthresh=25., nbrhd=0., 
+                  outpath, runinit, fhr,
+                  probvar='updraft_helicity', probthresh=25., nbrhd=0.,
                   subset=False, rboxpath=None, **subsetparms):
     '''
     Stores ensemble verification stats using FSS and Reliability
     calculations from calc.py. Currently only supports updraft
     helicity and uh thresholds based on formatting described in
     probpath input.
-    
+
     Inputs
     ------
-    probpath ------ path to netCDF file containing 
+    probpath ------ path to netCDF file containing
                     probability values. IMPORTANT
                     NOTE - prob file is expected to
                     be organized like in probcalcSUBSET.f
                      Variable P_HYD[0,i,:,:]:
                       i         Var
-                     [0]   Refl > 40 dBZ probs 
-                     [1]   UH > 25 m2/s2 probs 
+                     [0]   Refl > 40 dBZ probs
+                     [1]   UH > 25 m2/s2 probs
                      [2]   UH > 40 m2/s2 probs
                      [3]   UH > 100 m2/s2 probs
                      [4]   Wind Speed > 40 mph probs
@@ -52,7 +55,7 @@ def storeEnsStats(ensprobpath, obpath, reliabilityobpath,
                     Only supports 'updraft_helicity'
                     option as of right now.
     probthresh ---- float describing threshold of
-                    variable to use when 
+                    variable to use when
                     pulling probs. Choices
                     for UH are 25, 40, and 100 m2/s2.
                     Choices for Reflectivity and
@@ -79,7 +82,7 @@ def storeEnsStats(ensprobpath, obpath, reliabilityobpath,
                          in km
                      thresh - response threshold (i.e. UH > 25 m2/s2 probs,
                          25 is the threshold)
-                     sensvars - list of sensitivity variables to use for 
+                     sensvars - list of sensitivity variables to use for
                          subset. See subset.py or esens_subsetting.py for
                          info on naming conventions.
                      analysis_type - supports "RAP" or "WRF" at the moment
@@ -110,7 +113,7 @@ def storeEnsStats(ensprobpath, obpath, reliabilityobpath,
             #   threshold). Response_time describes the forecast
             #   hour for which the probabilities are valid. For
             #   instance, a response time of 23 means the 1-hr probs
-            #   are valid from f22-f23. 
+            #   are valid from f22-f23.
             ###########################################################
             statsout.createVariable('Response_Func', str, ('Times'))
             statsout.createVariable('Response_Thresh', float, ('Times'))
@@ -160,7 +163,7 @@ def storeEnsStats(ensprobpath, obpath, reliabilityobpath,
 
 # Plot FSS against a variable from the netCDF file
 def plotUHFSS(ncfilepaths, xvarname,
-              sigmas=[0,1,2], uhthresholds=[25., 40., 100.], nbrs=[30, 45, 60], 
+              sigmas=[0,1,2], uhthresholds=[25., 40., 100.], nbrs=[30, 45, 60],
               senstimes=[6,12], normalize=False,
               onlyplot=None, subset=False):
     '''
@@ -172,12 +175,12 @@ def plotUHFSS(ncfilepaths, xvarname,
         for uhthresh in uhthresholds:
             for nbr in nbrs:
                 for stime in senstimes:
-                    figpath = "fss_by_{}_sig{}_uh{}_nbr{}_stimef{}.png".format(xvarname, 
+                    figpath = "fss_by_{}_sig{}_uh{}_nbr{}_stimef{}.png".format(xvarname,
                                       sigma, uhthresh, nbr, stime)
                     plt.figure(1, figsize=(12,10))
                     ncruns = []
                     for path in ncfilepaths:
-                        print("NC File Path {}; Sigma {}; Neighborhood {}; UH Thresh {}; Sens Time: {}".format(path, 
+                        print("NC File Path {}; Sigma {}; Neighborhood {}; UH Thresh {}; Sens Time: {}".format(path,
                               sigma, nbr, uhthresh, stime))
                         # Open dataset
                         fssdat = Dataset(path)
@@ -187,7 +190,7 @@ def plotUHFSS(ncfilepaths, xvarname,
                         ncprobthresh = fssdat.variables['Response_Thresh'][:]
                         ncnbrhd = fssdat.variables['Neighborhood'][:]
                         ncsenstimes = fssdat.variables['Sens_Time'][:]
-                        # Find indices for particular combo of sigma, 
+                        # Find indices for particular combo of sigma,
                         #  threshold, sens times, and neighborhood values
                         inds = np.where((ncsig == sigma) & (ncprobthresh == uhthresh) & (ncnbrhd == nbr) & (ncsenstimes == stime))
                         # Run initialization
@@ -210,7 +213,7 @@ def plotUHFSS(ncfilepaths, xvarname,
                             if xvarname != 'Sens_Threshold':
                                 # If xvar isn't sens_threshold, it'll be subset size
                                 ncyvar = fssdat.variables['Sens_Threshold'][inds]
-                            else: 
+                            else:
                                 # Will need subset size too
                                 ncyvar = fssdat.variables['Subset_Size'][inds]
                             # List of unique sensitivity variable lists
@@ -229,7 +232,7 @@ def plotUHFSS(ncfilepaths, xvarname,
                                 else:
                                     varlabel = ' '.join(var for var in sensvar)
                                 # For legend label purposes
-                                plt.plot(0, 0, color=totcolors[i], 
+                                plt.plot(0, 0, color=totcolors[i],
                                          label="FSS Total Domain with Sensitivity Variables: {}".format(varlabel))
                                 plt.plot(0, 0, color=rboxcolors[i],
                                         label="FSS Response Box with Sensitivity Variables: {}".format(varlabel))
@@ -310,7 +313,7 @@ def plotUHFSS(ncfilepaths, xvarname,
                         plt.grid()
                         print(np.unique(f_rbox_fss))
                         if normalize == False:
-                            plt.plot(x, np.ones_like(x)*np.unique(f_rbox_fss)[0], color='maroon', 
+                            plt.plot(x, np.ones_like(x)*np.unique(f_rbox_fss)[0], color='maroon',
                                     linewidth=4, linestyle='--', label="Full Ensemble FSS Response Box", zorder=13)
                             plt.plot(x, np.ones_like(x)*np.unique(f_tot_fss)[0], color='midnightblue',
                                 linewidth=4, linestyle='--', label="Full Ensemble FSS Total Domain", zorder=13)
@@ -318,11 +321,11 @@ def plotUHFSS(ncfilepaths, xvarname,
                     plt.xlabel(xvarname.replace('_',' '), fontsize=12)
                     if normalize:
                         plt.ylabel('Fractional Skill Score Difference (Subset FSS - Full Ensemble FSS', fontsize=12)
-                        plt.title(r"FSS for Runs Initiated {}".format(', '.join(str(run) for run in np.unique(ncruns[0][:]))) + '\n' + r"Practically Perfect $\sigma$ = {}; Neighborhood = {} km; UH Threshold = {} m$^2$/s$^2$; Sens Time = f{}".format(sigma, 
+                        plt.title(r"FSS for Runs Initiated {}".format(', '.join(str(run) for run in np.unique(ncruns[0][:]))) + '\n' + r"Practically Perfect $\sigma$ = {}; Neighborhood = {} km; UH Threshold = {} m$^2$/s$^2$; Sens Time = f{}".format(sigma,
                                   nbr, uhthresh, stime), fontsize=14)
                     else:
                         plt.ylabel('Fractional Skill Score', fontsize=12)
-                        plt.title(r"FSS for Runs Initiated {}".format(', '.join(str(run) for run in np.unique(ncruns[0][:]))) + '\n' + r"Practically Perfect $\sigma$ = {}; Neighborhood = {} km; UH Threshold = {} m$^2$/s$^2$; Sens Time = f{}".format(sigma, 
+                        plt.title(r"FSS for Runs Initiated {}".format(', '.join(str(run) for run in np.unique(ncruns[0][:]))) + '\n' + r"Practically Perfect $\sigma$ = {}; Neighborhood = {} km; UH Threshold = {} m$^2$/s$^2$; Sens Time = f{}".format(sigma,
                                   nbr, uhthresh, stime), fontsize=14)
                     plt.xlim(x.min(), x.max())
                     l = plt.legend(fontsize=10, loc=9, bbox_to_anchor=(0.5,0.), borderaxespad=4.)
@@ -330,24 +333,90 @@ def plotUHFSS(ncfilepaths, xvarname,
                     plt.savefig(figpath, bbox_extra_artists=(l,), bbox_inches='tight')
                     plt.close()
     return
-    
+
+def storeUHStatsCSV(outpath, probpath, pperfpath, reliabilityobpath,
+                    verif_fhr, nbrhd, probthresh, probvar='P_HYD'):
+    """
+    Stores UH verification stats to csv file.
+
+    Inputs
+    ------
+    outpath ----------- absolute output filepath as a string
+    pperfpath --------- absolute filepath for practically perfect
+                        gridded data
+    reliabilityobpath - absolute filepath for reliability observational
+                        point data on ensemble grid
+    verif_fhr -------- forecast hour to verify (e.g. 24 to verify
+                        UH between forecast hours 23 and 24)
+    nbrhd ------------- neighborhood distance in km
+    probthresh -------- probability threshold (e.g. UH > 25 m2/s2)
+    probvar ----------- name of netCDF variable in which
+                        probabilities are stored (as string).
+                        If using probability calculations from
+                        this library, probabilities will by default
+                        be stored in 'P_HYD'
+
+    Outputs
+    -------
+    returns NULL and stores UH verification stats to outpath as csv
+    """
+    probdat = Dataset(probpath)
+    ######## THIS WILL NOT WORK ON THE FIRST TRY #######################
+    ######## Get correct format string when quanah returns #############
+    runinit = datetime(probdat.START_DATE)
+    veriftime = runinit + timedelta(hours=verif_fhrs)
+    var = 'updraft_helicity'
+    if os.path.exists(pperfpath):
+        fens_fss = FSS(probpath, pperfpath, veriftime, var=probvar,
+                  thresh=probthresh, rboxpath=S.getDir()+'esens.in')
+        fens_reliability = Reliability(probpath, runinit, verif_fhr,
+                                       obpath=reliabilityobpath, var='updraft_helicity',
+                                       thresh=probthresh, rboxpath=None,
+                                       sixhr=False, nbrhd=nbrhd)
+        # rbox parameters will be zeros since we didn't provide any response box
+        #   information.
+        prob_bins, f_fcstfreq_tot, f_ob_hr_tot, f_fcstfreq_rbox, f_ob_hr_rbox = fens_reliability
+        f_fss_tot, f_fss_rbox, sig = fens_fss
+    else:
+        raise FileNotFoundError('Please run storePracPerf() or set correct obpath.')
+    if os.path.exists(outpath):
+        mode = 'a'
+    else:
+        mode = 'w'
+    # Open file with specified mode
+    with open(outpath, mode=mode) as outfile:
+        if mode == 'w':
+            # If new file, add header row
+            cols = ['Run_Init', 'Response_Func',
+                    'Response_Time', 'Full_Ens_FSS_Total',
+                    'Prac_Perf_Sigma', 'Neighborhood',
+                    'Response_Thresh', 'Full_Ens_Reliability_Total']
+            outfile_writer = csv.writer(outfile, delimiter=',')
+            outfile_writer.writerow(cols)
+        # Add row valid for current ensemble
+        entry = [runinit, var, verif_fhr, f_fss_tot, sig,
+                self._nbr, (prob_bins, f_fcstfreq_tot, f_ob_hr_tot),
+                 (prob_bins, f_fcstfreq_rbox, f_ob_hr_rbox)]
+        outfile_writer = csv.writer(outfile, delimiter=',')
+        outfile_writer.writerow(entry)
+
 def plotHistUHFSS(statspaths, outpath, xvarname='Subset_Size'):
     '''
     Plots 3D histogram of FSS by some chosen variable.
     '''
     pass
 
-# In[6]:
+def plotReliabilityfromCSV(statspaths, outpath, subset=False, subgroupby="Sens_Vars",
+                    sigmas=[0,1,2], uhthresholds=[25., 40., 100.], nbrs=[30, 45, 60],
+                    senstimes=[6,12], subsize=10):
+    '''
+    Plot reliability diagram from csv files.
+    '''
+    # TO-DO: Add plotting functions from csv
+    pass
 
-
-#plotUHFSS(ncfilepaths=ncfiles, xvarname='Subset_Size', subset=True)
-
-
-# In[4]:
-
-
-def plotReliability(statspaths, outpath, subset=False, subgroupby="Sens_Vars",
-                    sigmas=[0,1,2], uhthresholds=[25., 40., 100.], nbrs=[30, 45, 60], 
+def plotReliabilityfromNETCDF(statspaths, outpath, subset=False, subgroupby="Sens_Vars",
+                    sigmas=[0,1,2], uhthresholds=[25., 40., 100.], nbrs=[30, 45, 60],
                     senstimes=[6,12], subsize=10):
     '''
     Plot reliability diagrams.
@@ -362,7 +431,7 @@ def plotReliability(statspaths, outpath, subset=False, subgroupby="Sens_Vars",
         bins, fcstfreqtmp, obhitratetmp = fensrel[:,0], fensrel[:,1], fensrel[:,2]
         obhitrate = np.ma.masked_array(obhitratetmp, mask=9e9)
         fcstfreq = np.ma.masked_array(fcstfreqtmp, mask=9e9)
-        # If subset           
+        # If subset
         if subset:
             ncsubsizes = stats.variables['Subset_Size'][:]
             ncsig = stats.variables['Prac_Perf_Sigma'][:]
@@ -381,7 +450,7 @@ def plotReliability(statspaths, outpath, subset=False, subgroupby="Sens_Vars",
                             # Get indices for subset of relibility array
                             inds = np.where((ncsubsizes == subsize) & \
                                             (ncsig == sigma) & (ncrthresh == uhthresh) & \
-                                            (ncnbrhds == nbr) & (ncstimes == stime)) 
+                                            (ncnbrhds == nbr) & (ncstimes == stime))
                             # Grab full ensemble reliability for given indices
                             # Full ensemble reliability for total
                             fensrel = stats.variables['Full_Ens_Reliability_Total'][inds]
@@ -399,12 +468,12 @@ def plotReliability(statspaths, outpath, subset=False, subgroupby="Sens_Vars",
                             print(bins[0], obhitrate[0])
                             plt.plot(bins[0], obhitrate[0], linewidth=3,
                                      linestyle='-.', color='maroon', zorder=4,
-                                     label='Full Ens Response Box Reliability')  
+                                     label='Full Ens Response Box Reliability')
                             # Going to average reliability by this variable
                             groupby = stats.variables[subgroupby][inds]
                             # Finding the set of unique values in most
                             # variables is easy, but when working with
-                            # lists of lists associated with sensitivity 
+                            # lists of lists associated with sensitivity
                             # variabes, we need to do a little extra work.
                             if subgroupby == 'Sens_Vars':
                                 unique =  [list(x) for x in set(tuple(x) for x in groupby)]
@@ -433,16 +502,16 @@ def plotReliability(statspaths, outpath, subset=False, subgroupby="Sens_Vars",
                                             mask.append(True)
                                         else:
                                             mask.append(False)
-                                    plt.plot(10, 0, linewidth=2, color=totcolors[i], 
+                                    plt.plot(10, 0, linewidth=2, color=totcolors[i],
                                              linestyle='--',
                                              label='Rel for Total Domain Sens Vars: {}'.format(varlabel))
-                                    plt.plot(10, 0, linewidth=2, color=rboxcolors[i], 
+                                    plt.plot(10, 0, linewidth=2, color=rboxcolors[i],
                                              label='Rel for Response Box Sens Vars: {}'.format(varlabel))
                                 else:
                                     mask = (groupby == groupbyval)
                                     varlabel = str(groupbyval)
                                 # Subset reliability for total domain
-                                subrel = stats.variables['Subset_Reliability_Total'][inds][mask]                               
+                                subrel = stats.variables['Subset_Reliability_Total'][inds][mask]
                                 bins, fcstfreqtmp, obhitratetmp = subrel[:,0], subrel[:,1], subrel[:,2]
                                 probbins.append(bins[0])
                                 obhitrate = np.ma.masked_array(obhitratetmp, mask=(obhitratetmp==9e9))
@@ -489,3 +558,48 @@ def plotReliability(statspaths, outpath, subset=False, subgroupby="Sens_Vars",
             plt.savefig(outpath)
             plt.close()
         return
+
+def plotPracPerf(pperfpath, sixhour=False,
+                 wrfoutref="/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2"):
+    """
+    Plots practically perfect probabilities given
+    the desired practically perfect filepath and
+    store it to the designated outfile path.
+    """
+    pperfnc = Dataset(pperfpath)
+    init = pperfnc.START_DATE
+    initdate = datetime(int(init[:4]), int(init[5:7]),
+                        int(init[8:10]), int(init[11:13]))
+    fhrs = pperfnc.variables['fhr'][:]
+    sigma = pperfnc.variables['sigma'][:]
+    pperf = pperfnc.variables['practically_perfect']
+    ref = Dataset(wrfoutref)
+    lons = ref.variables['XLONG'][0]
+    lats = ref.variables['XLAT'][0]
+    print(np.shape(pperf))
+    print(np.shape(lons))
+
+    for t in range(len(fhrs)):
+        fig = plt.figure(figsize=(10, 10))
+        time = initdate + timedelta(hours=int(fhrs[t]))
+        # Build map
+        ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal())
+        ax.set_extent([-108., -85., 28., 45.])
+        state_borders = cfeat.NaturalEarthFeature(category='cultural',
+                   name='admin_1_states_provinces_lakes', scale='50m', facecolor='None')
+        ax.add_feature(state_borders, linestyle="-", edgecolor='dimgray')
+        ax.add_feature(cfeat.BORDERS, edgecolor='dimgray')
+        ax.add_feature(cfeat.COASTLINE, edgecolor='dimgray')
+        cflevels = np.arange(10, 110, 10)
+        cf = ax.contourf(lons, lats, pperf[t], cflevels, transform=ccrs.PlateCarree(),
+                         cmap=nclcmaps.cmap("perc2_9lev"))
+        #plt.clabel(cs)
+        plt.colorbar(cf, ax=ax, fraction=0.039, pad=0.01, orientation='vertical', label='Probability')
+        if sixhour:
+            plt.title(r'$\sigma = $' + str(sigma[0]) + ' Practically Perfect valid: ' + \
+                      str(time-timedelta(hours=6)) + ' to ' + str(time))
+            plt.savefig('sixhr_pperf_f{}.png'.format(fhrs[t]))
+        else:
+            plt.title(r'$\sigma = $' + str(sigma[0]) + ' Practically Perfect valid: ' + \
+                      str(time-timedelta(hours=1)) + ' to ' + str(time))
+            plt.savefig('onehr_pperf_f{}.png'.format(fhrs[t]))

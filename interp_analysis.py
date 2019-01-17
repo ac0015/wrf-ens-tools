@@ -1,9 +1,3 @@
-
-# coding: utf-8
-
-# In[2]:
-
-
 import numpy as np
 from netCDF4 import Dataset
 from cartopy import crs as ccrs
@@ -14,30 +8,29 @@ from scipy import interpolate
 from siphon import ncss
 import subprocess
 
-# In[3]:
-
-
-###################################################
+###########################################################
 # Austin Coleman
 # 12/27/2017
 #
-# Python library to interpolate RAP analysis from
-# desired date/time to our WRF grid and save
+# Python library to interpolate external analyses from
+# desired date/time to a desired WRF grid and save
 # off the interpolated analysis to a netCDF4 file.
-##################################################
+##########################################################
 
 # For more convenient subprocess runs (courtesy of Stack Overflow)
 def subprocess_cmd(command):
     process = subprocess.Popen(command,stdout=subprocess.PIPE, shell=True)
     proc_stdout = process.communicate()[0].strip()
     print(proc_stdout)
+    return
 
+# Clunky alternative to strftime. TO-DO: Move all calls of this to strftime()
 def fromDatetime(date, interp=False):
-    '''
+    """
     Slices components of a datetime.datetime object and returns
     as a tuple of strings to be compatible with sensitivity and
     RAP file naming conventions.
-    '''
+    """
     year = str(date.year)
     # Convert any 1-digit integers to 2-digit strings
     if len(str(date.month)) == 1: month = "0"+str(date.month)
@@ -49,14 +42,13 @@ def fromDatetime(date, interp=False):
     if interp: hour += "00" # Append two zeroes for 4-digit hr
     return year, month, day, hour
 
-#@profile
 def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
-    '''
+    """
     A method which interpolates a function
     z(grid1x, grid1y) of a grid (grid1x, grid1y) to another
     grid (grid2x, grid2y). Returns an array from the approximated
     function of the second grid (approximation of z(grid2x, grid2y)).
-    '''
+    """
     # Pair flattened x and y values as coordinates
     coords_from = list(zip(grid1y.flatten(), grid1x.flatten()))
     Z = z.flatten()
@@ -64,31 +56,27 @@ def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
     interp = interpolate.LinearNDInterpolator(coords_from, Z, fill_value=9e9)
     # Interpolate to new grid
     interpolated_z = interp(grid2y, grid2x)
-
     return interpolated_z
 
-# In[29]:
-
 def interpRAPtoWRF(yr, mo, day, hr, wrfref):
-    '''
+    """
     Method to interpolate a RAP analysis pulled from the NCSS server
     to a user-provided WRF grid for a specific day and time.
 
     Inputs
     ------
-    yr     - 4-digit year as string
-    month  - 2-digit month (i.e. 02 for February) as string
-    day    - 2-digit day as string
-    hr     - 4-digit hour (i.e. 1200 for 12 UTC) as string
+    yr ----- 4-digit year as string
+    month -- 2-digit month (i.e. 02 for February) as string
+    day ---- 2-digit day as string
+    hr ----- 4-digit hour (i.e. 1200 for 12 UTC) as string
     wrfref - filepath to wrfout grid file to which RAP will be interpolated
 
     Outputs
     -------
-    Returns NULL but will produce a netCDF4 file with interpolated RAP in the
-    directory where method was called. Also produces a test .png file comparing
+    returns NULL but will produce a netCDF4 file with interpolated RAP in the
+    directory where method was called. Also produces a test ".png" file comparing
     RAP to interpolated RAP to ensure that the interpolation worked.
-    '''
-
+    """
     # Read RAP datset
     rap = ncss.NCSS("https://www.ncei.noaa.gov/thredds/ncss/grid/rap130anl/{}{}/{}{}{}/rap_130_{}{}{}_{}_000.grb2".format(yr,
                     mo, yr, mo, day, yr, mo, day, hr))
@@ -152,8 +140,11 @@ def interpRAPtoWRF(yr, mo, day, hr, wrfref):
     u10 = uwind_hgt[0,lev10m,:,:]
     v10 = vwind_hgt[0,lev10m,:,:]
 
+    # Variables to interpolate
     sensvarlist = [gph300,gph500,gph700,gph850,temp300,temp500,temp700,temp850,temp925,
                   u300,u500,u700,u850,u925,v300,v500,v700,v850,v925,slp,t2,q2,td2,u10,v10]
+    # TO-DO: Change sensitivity strings to get rid of leading numeric values.
+    #        Makes formatting in the netCDF file really gross-looking.
     sensstringslist = ["300 hPa GPH","500 hPa GPH","700 hPa GPH","850 hPa GPH","300 hPa T","500 hPa T",
                        "700 hPa T","850 hPa T","925 hPa T","300 hPa U-Wind","500 hPa U-Wind",
                        "700 hPa U-Wind","850 hPa U-Wind","925 hPa U-Wind","300 hPa V-Wind","500 hPa V-Wind",
@@ -188,13 +179,29 @@ def interpRAPtoWRF(yr, mo, day, hr, wrfref):
     RAPinterp = np.zeros((len(sensvarlist), len(lats[:,0]), len(lons[0,:])))
     for i in range(len(sensvarlist)):
         RAPinterp[i] = bilinear_interp(recefx, recefy, wecefx, wecefy, sensvarlist[i])
-        var = interpnc.createVariable(sensstringslist[i].replace(" ","_"), RAPinterp[i].dtype, dimensions=('lat','lon'))
+        var = interpnc.createVariable(sensstringslist[i].replace(" ","_"),
+                                RAPinterp[i].dtype, dimensions=('lat','lon'))
         var[:,:] = RAPinterp[i]
     interpnc.close()
-
     return
 
 def plotRAPinterp(rapfile, var="500_hPa_GPH"):
+    """
+    Function mainly meant to sanity-check that a RAP
+    interpolation worked correctly.
+
+    Inputs
+    ------
+    rapfile --- absolute filepath of desired
+                interpolated RAP file to test.
+    var ------- variable string of the variable
+                to plot. Defaults to "500500_hPa_GPH".
+
+    Outputs
+    -------
+    returns NULL but saves an image called
+    "RAP_Analysis_{var}.png"
+    """
     rap = Dataset(rapfile)
     lons, lats = rap.variables['XLONG'], rap.variables['XLAT']
     rapvar = rap.variables[var]
@@ -221,5 +228,4 @@ def plotRAPinterp(rapfile, var="500_hPa_GPH"):
     ax.set_title(var.replace("_"," ")+" RAP Analysis")
     plt.savefig("RAP_Analysis_"+var)
     plt.close()
-
     return

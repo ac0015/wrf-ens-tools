@@ -16,7 +16,7 @@ import numpy as np
 import wrf
 from netCDF4 import Dataset
 from datetime import timedelta
-from calc import calc_prac_perf, nearest_neighbor_spc
+from calc import calc_prac_perf_native_grid, calc_prac_perf_spc_grid, nearest_neighbor_spc
 import os
 
 dflt_var = ['td2', 'T2']
@@ -342,10 +342,147 @@ def process_wrf(inpaths, outpath, reduced=True,
         outfile.close()
         return
 
+def postTTUWRFanalysis(inpath, outpath,
+                       refpath='/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREF'):
+    """
+    Post-process Brian's TTU WRF analyses into wrf-ens-tools
+    naming conventions and store to new netCDF to use in
+    subsetting.
+
+    Here's how Brian stratifies the variables:
+      t(:,:,1)=gph300next(:,:)
+      t(:,:,2)=gph500next(:,:)
+      t(:,:,3)=gph700next(:,:)
+      t(:,:,4)=gph850next(:,:)
+      t(:,:,5)=gph925next(:,:)
+      t(:,:,6)=t300next(:,:)
+      t(:,:,7)=t500next(:,:)
+      t(:,:,8)=t700next(:,:)
+      t(:,:,9)=t850next(:,:)
+      t(:,:,10)=t925next(:,:)
+      t(:,:,11)=u300next(:,:)
+      t(:,:,12)=u500next(:,:)
+      t(:,:,13)=u700next(:,:)
+      t(:,:,14)=u850next(:,:)
+      t(:,:,15)=u925next(:,:)
+      t(:,:,16)=v300next(:,:)
+      t(:,:,17)=v500next(:,:)
+      t(:,:,18)=v700next(:,:)
+      t(:,:,19)=v850next(:,:)
+      t(:,:,20)=v925next(:,:)
+      t(:,:,21)=td300next(:,:)
+      t(:,:,22)=td500next(:,:)
+      t(:,:,23)=td700next(:,:)
+      t(:,:,24)=td850next(:,:)
+      t(:,:,25)=td925next(:,:)
+      t(:,:,26)=q300next(:,:)
+      t(:,:,27)=q500next(:,:)
+      t(:,:,28)=q700next(:,:)
+      t(:,:,29)=q850next(:,:)
+      t(:,:,30)=q925next(:,:)
+      t(:,:,31)=slpnext(:,:)
+      t(:,:,32)=t2next(:,:)
+      t(:,:,33)=td2next(:,:)
+      t(:,:,34)=u10next(:,:)
+      t(:,:,35)=v10next(:,:)
+      t(:,:,36)=0.0
+      t(:,:,37)=0.0
+
+    Convert to following naming conventions in a new netCDF:
+    sensstringslist = ["300 hPa GPH","500 hPa GPH","700 hPa GPH",
+                       "850 hPa GPH","300 hPa T","500 hPa T",
+                       "700 hPa T","850 hPa T","925 hPa T",
+                       "300 hPa U-Wind","500 hPa U-Wind",
+                       "700 hPa U-Wind","850 hPa U-Wind",
+                       "925 hPa U-Wind","300 hPa V-Wind","500 hPa V-Wind",
+                       "700 hPa V-Wind","850 hPa V-Wind","925 hPa V-Wind",
+                       "SLP","2m Temp","2m Q",
+                       "2m Dewpt","10m U-Wind","10m V-Wind"]
+    """
+    # Pull analysis variables
+    og_analysis = Dataset(inpath)
+    anlvars = og_analysis.variables['T'][0]
+    print(np.shape(anlvars))
+    gph300 = anlvars[0,:,:]
+    gph500 = anlvars[1,:,:]
+    gph700 = anlvars[2,:,:]
+    gph850 = anlvars[3,:,:]
+    gph925 = anlvars[4,:,:]
+    temp300 = anlvars[5,:,:]
+    temp500 = anlvars[6,:,:]
+    temp700 = anlvars[7,:,:]
+    temp850 = anlvars[8,:,:]
+    temp925 = anlvars[9,:,:]
+    u300 = anlvars[10,:,:]
+    u500 = anlvars[11,:,:]
+    u700 = anlvars[12,:,:]
+    u850 = anlvars[13,:,:]
+    u925 = anlvars[14,:,:]
+    v300 = anlvars[15,:,:]
+    v500 = anlvars[16,:,:]
+    v700 = anlvars[17,:,:]
+    v850 = anlvars[18,:,:]
+    v925 = anlvars[19,:,:]
+    td300 = anlvars[20,:,:]
+    td500 = anlvars[21,:,:]
+    td700 = anlvars[22,:,:]
+    td850 = anlvars[23,:,:]
+    td925 = anlvars[24,:,:]
+    q300 = anlvars[25,:,:]
+    q500 = anlvars[26,:,:]
+    q700 = anlvars[27,:,:]
+    q850 = anlvars[28,:,:]
+    q925 = anlvars[29,:,:]
+    slp = anlvars[30,:,:]
+    t2 = anlvars[31,:,:]
+    td2 = anlvars[32,:,:]
+    u10 = anlvars[33,:,:]
+    v10 = anlvars[34,:,:]
+
+    wrf_d1 = Dataset(refpath)
+    lons, lats = wrf_d1.variables['XLONG'][0], wrf_d1.variables['XLAT'][0]
+    wrf_idim = len(lons[0,:])
+    wrf_jdim = len(lats[:,0])
+
+    sensvarlist = [gph300,gph500,gph700,gph850,gph925,temp300,temp500,temp700,
+                   temp850,temp925,u300,u500,u700,u850,u925,v300,
+                   v500,v700,v850,v925,td300,td500,td700,td850,
+                   td925,q300,q500,q700,q850,q925,slp,t2,td2,u10,v10]
+    sensstringslist = ["300 hPa GPH","500 hPa GPH","700 hPa GPH",
+                       "850 hPa GPH","925 hPa GPH","300 hPa T","500 hPa T",
+                       "700 hPa T","850 hPa T","925 hPa T","300 hPa U-Wind",
+                       "500 hPa U-Wind","700 hPa U-Wind","850 hPa U-Wind",
+                       "925 hPa U-Wind","300 hPa V-Wind","500 hPa V-Wind",
+                       "700 hPa V-Wind","850 hPa V-Wind","925 hPa V-Wind",
+                       "300 hPa Dewpt", "500 hPa Dewpt", "700 hPa Dewpt",
+                       "850 hPa Dewpt", "925 hPa Dewpt", "300 hPa Q",
+                       "500 hPa Q", "700 hPa Q", "850 hPa Q", "925 hPa Q",
+                       "SLP","2m Temp","2m Dewpt",
+                       "10m U-Wind","10m V-Wind"]
+
+
+    # Write interpolated variables to netCDF
+    new_analysis = Dataset(outpath, "w", format="NETCDF4")
+    new_analysis.createDimension('lat', wrf_jdim)
+    new_analysis.createDimension('lon', wrf_idim)
+    new_analysis.createDimension('time', None)
+    xlat = new_analysis.createVariable("XLAT", float, dimensions=('lat','lon'))
+    xlat[:,:] = lats
+    xlon = new_analysis.createVariable("XLONG", float, dimensions=('lat','lon'))
+    xlon[:,:] = lons
+
+    # Interpolate and save!!
+    for i in range(len(sensvarlist)):
+        var = new_analysis.createVariable(sensstringslist[i].replace(" ","_"),
+                                          sensvarlist[i].dtype,
+                                          dimensions=('lat','lon'))
+        var[:,:] = sensvarlist[i]
+    new_analysis.close()
+
 # Post-process practically perfect
-def storePracPerf(modelinit, fcsthrs, outpath, sigma=2):
+def storePracPerfNativeGrid(modelinit, fcsthrs, outpath, nbrhd, dx, sixhour=False):
     '''
-    Calculate hourly practically perfect on WRF grid.
+    Calculate hourly or six-hourly practically perfect on WRF grid.
     Save to netCDF file for verification.
 
     Inputs
@@ -357,17 +494,28 @@ def storePracPerf(modelinit, fcsthrs, outpath, sigma=2):
                 forecast hours to.)
     fsthrs ---- list of forecast hour integers, or
                 hours since modelinit time.
+    sixhour --- boolean describing whether to store
+                practically perfect probs in six-hour or
+                one-hour increments. Defaults to one hour.
     outpath --- string specifying absolute path of
                 netCDF output.
+    nbrhd ----- neighborhoood distance in km to use for
+                the distance-based sigma of the Gaussian
+                kernel.
+    dx -------- horizontal grid-spacing on model domain to
+                serve as the denominator of the Gaussian
+                kernel.
 
     Outputs
     -------
     returns NULL, but saves to netCDF outpath.
     '''
     # Create outfile
-    netcdf_out = Dataset(outpath, 'w')
+    netcdf_out = Dataset(outpath, "w", format="NETCDF4")
     # Calculate pperf to pull lat/lon data
-    pperf, lon, lat = calc_prac_perf(modelinit, False, fcsthrs[0], sigma=sigma)
+    sigma = nbrhd / dx
+    pperf, lon, lat = calc_prac_perf_native_grid(modelinit, sixhour,
+                                     fcsthrs[0], sigma=sigma)
     # Set up netCDF
     netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
     netcdf_out.createDimension('Time', len(fcsthrs))
@@ -375,19 +523,75 @@ def storePracPerf(modelinit, fcsthrs, outpath, sigma=2):
     netcdf_out.createDimension('west_east', len(lon[0,:]))
     netcdf_out.createDimension('sigma', 1)
     times = netcdf_out.createVariable('fhr', int, ('Time'))
-    sig = netcdf_out.createVariable('sigma', int, ('sigma'))
+    sig = netcdf_out.createVariable('sigma', float, ('sigma'))
     pperfout = netcdf_out.createVariable('practically_perfect', float, ('Time', 'south_north', 'west_east'))
     sig[:] = sigma
     # Populate outfile with pperf
     for t in range(len(fcsthrs)):
-        pperf, lon, lat = calc_prac_perf(modelinit, False, fcsthrs[t], sigma=sigma)
+        pperf, lon, lat = calc_prac_perf_native_grid(modelinit,
+                                sixhour, fcsthrs[t], sigma=sigma)
         pperfout[t] = pperf[:]*100.
         times[t] = fcsthrs[t]
     netcdf_out.close()
     return
 
-# Post-process nearest neighbor of SPC reports (for reliability)
-def storeNearestNeighbor(modelinit, fcsthrs, outpath, nbrhd):
+def storePracPerfSPCGrid(modelinit, fcsthrs, outpath, nbrhd, dx, sixhour=False):
+    '''
+    Calculate hourly or six-hourly practically perfect on 80-km grid-spacing
+    SPC grid, which is then interpolated to WRF grid and stored to netCDF
+    for verification.
+
+    Inputs
+    ------
+    modelinit - WRF run initialization datetime obj
+                for formatting times correctly.
+                (WRF run doesn't need to exist,
+                just need baseline datetime to add
+                forecast hours to.)
+    fsthrs ---- list of forecast hour integers, or
+                hours since modelinit time.
+    sixhour --- boolean describing whether to store
+                practically perfect probs in six-hour or
+                one-hour increments. Defaults to one hour.
+    outpath --- string specifying absolute path of
+                netCDF output.
+    nbrhd ----- neighborhoood distance in km to use for
+                the distance-based sigma of the Gaussian
+                kernel.
+    dx -------- horizontal grid-spacing on model domain to
+                serve as the denominator of the Gaussian
+                kernel.
+
+    Outputs
+    -------
+    returns NULL, but saves to netCDF outpath.
+    '''
+    # Create outfile
+    netcdf_out = Dataset(outpath, "w", format="NETCDF4")
+    # Calculate pperf to pull lat/lon data
+    sigma = nbrhd / dx
+    pperf, lon, lat = calc_prac_perf_spc_grid(modelinit, sixhour,
+                                     fcsthrs[0], sigma=sigma)
+    # Set up netCDF
+    netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
+    netcdf_out.createDimension('Time', len(fcsthrs))
+    netcdf_out.createDimension('south_north', len(lat[:,0]))
+    netcdf_out.createDimension('west_east', len(lon[0,:]))
+    netcdf_out.createDimension('sigma', 1)
+    times = netcdf_out.createVariable('fhr', int, ('Time'))
+    sig = netcdf_out.createVariable('sigma', float, ('sigma'))
+    pperfout = netcdf_out.createVariable('practically_perfect', float, ('Time', 'south_north', 'west_east'))
+    sig[:] = sigma
+    # Populate outfile with pperf
+    for t in range(len(fcsthrs)):
+        pperf, lon, lat = calc_prac_perf_spc_grid(modelinit, sixhour, fcsthrs[t], sigma=sigma)
+        pperfout[t] = pperf[:]*100.
+        times[t] = fcsthrs[t]
+    netcdf_out.close()
+    return
+
+# Interpolate storm reports to nearest grid point
+def storeNearestNeighbor(modelinit, fcsthrs, outpath):
     '''
     Calculate hourly nearest neighbor on WRF grid.
     Save to netCDF file for verification.
@@ -403,37 +607,31 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, nbrhd):
                 hours since modelinit time.
     outpath --- string specifying absolute path of
                 netCDF output.
-    nbrhd ----- float specifying desired neighborhood
-                value in km
 
     Outputs
     -------
     returns NULL, but saves to netCDF outpath.
     '''
     # Create outfile
-    netcdf_out = Dataset(outpath, 'w')
+    netcdf_out = Dataset(outpath, "w", format="NETCDF4")
     # Calculate pperf to pull lat/lon data
-    grid = nearest_neighbor_spc(modelinit, False, fcsthrs[0], nbrhd=nbrhd)
+    grid = nearest_neighbor_spc(modelinit, False, fcsthrs[0], nbrhd=0)
     # Set up netCDF
     netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
     netcdf_out.createDimension('Time', len(fcsthrs))
     netcdf_out.createDimension('south_north', len(grid[:,0]))
     netcdf_out.createDimension('west_east', len(grid[0,:]))
-    netcdf_out.createDimension('nbrhd', 1)
     times = netcdf_out.createVariable('fhr', int, ('Time'))
-    nbr = netcdf_out.createVariable('neighbor', int, ('nbrhd'))
     nearest_out = netcdf_out.createVariable('nearest_neighbor', float, ('Time', 'south_north', 'west_east'))
-    nbr[:] = nbrhd
     # Populate outfile with pperf
     for t in range(len(fcsthrs)):
-        grid = nearest_neighbor_spc(modelinit, False, fcsthrs[t], nbrhd=nbrhd)
+        grid = nearest_neighbor_spc(modelinit, False, fcsthrs[t], nbrhd=0)
         nearest_out[t] = grid[:]
         times[t] = fcsthrs[t]
     netcdf_out.close()
     return
+
 # TO-DO: to make real-time useable, add prob calculation
 # with procalcSUBSET.f
 def calcEnsProbs(enspath, members, wrfref):
     pass
-
-                
