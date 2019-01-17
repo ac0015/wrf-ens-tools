@@ -16,6 +16,8 @@ from netCDF4 import Dataset
 from calc import FSS, Reliability
 from post_process import gen_dict, process_wrf, postTTUWRFanalysis
 
+package_dir = os.path.dirname(os.path.abspath(__file__))
+
 #################
 # Subset class
 #################
@@ -336,7 +338,8 @@ class Subset:
             print("Calculating one hour probabilities...")
             probcalc_exec = "probcalcSUBSET"
 
-        args = "/lustre/work/aucolema/enkfDART/src/{} <{} >probs.out".format(probcalc_exec, fname)
+        probcalcpath = os.path.join(package_dir, probcalc_exec)
+        args = "{} <{} >probs.out".format(probcalcpath, fname)
         try:
             subprocess_cmd(args)
         except OSError:
@@ -456,22 +459,7 @@ class Subset:
             fname = "subset_probs.in"
             probout = self._subprob
 
-#        # Format input file
-#        os.popen('echo {} > {}'.format(len(members), fname))
-#        os.popen('echo {} >> {}'.format(' '.join([str(mem) for mem in members]), fname))
-#        os.popen('echo {} >> {}'.format(str(S.getRTime()), fname))
-#        os.popen('echo {} >> {}'.format(str(self._nbr), fname))
-#        os.popen('echo {} >> {}'.format(probout, fname))
-#        print("Storing to {}".format(probout))
-
-        # Fixing Runtime bug - under construction!
-#        args = [self._modpath + "/create_probcalc_inputfile.bash",
-#                fname + '\n',
-#                str(len(members)) + '\n',
-#                ' '.join([str(mem) for mem in members]) + '\n',
-#                str(S.getRTime()) + '\n',
-#                str(self._nbr) + '\n', probout + '\n']
-
+        # Create list of args to create input file with
         args = [self._modpath + "/create_probcalc_inputfile.bash"]
         args.append(fname)
         args.append(str(len(members)))
@@ -479,7 +467,6 @@ class Subset:
         args.append(str(S.getRTime()))
         args.append(str(self._nbr))
         args.append(probout)
-        print(args)
         subprocess.check_call(args)
 
         # Initialize probfile
@@ -488,15 +475,16 @@ class Subset:
         os.popen("cp {} {}".format(S.getRefFileD2(), probout))
 
         # Run fortran executable
-        # TO-DO: figure out why this fails when submitted as a job
         if S.getSixHour():
             print("Calculating six hour probabilities...")
             probcalc_exec = "sixhrprobcalc"
         else:
             print("Calculating one hour probabilities...")
             probcalc_exec = "probcalcSUBSET"
-
-        args = "/lustre/work/aucolema/enkfDART/src/{} <{} >probs.out".format(probcalc_exec, fname)
+        # Build command
+        probcalcpath = os.path.join(package_dir, probcalc_exec)
+        args = "{} <{} >probs.out".format(probcalcpath, fname)
+        # Execute
         try:
             subprocess_cmd(args)
         except OSError:
@@ -504,11 +492,11 @@ class Subset:
             try:
                 reRun(probout, S, args)
             except:
-                print('probcalc failed twice. Continue to error checks.')
+                print('Probcalc failed twice. Continue to error checks.')
 
         # Check to make sure it ran correctly
         if os.path.exists(probout) == False:
-            print('probcalc failed. Re-running.')
+            print('Probcalc failed. Re-running.')
             reRun(probout, S, args)
 
         # This can get stuck in an infinite loop if something is
@@ -536,7 +524,6 @@ class Subset:
         else:
             path = fullenspath
         wrfrefpath = S.getRefFileD2()
-
         research_plotting.plotProbs(path, wrfrefpath,
                                     S.getRbox(), S.getRTime(), self._nbr, outpath=direc,
                                     subset=use_subset)

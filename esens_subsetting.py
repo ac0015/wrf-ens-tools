@@ -191,8 +191,10 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
     sens_masked = np.ma.masked_array(sensmat_masked, mask=tmask)
     diff = np.zeros_like(error)
     for k in range(len(varkeys)):
-        print("Min sensitivity val for sens var {}: ".format(sensvars[k]), np.ma.min(np.abs(sens_masked[k])))
-        print("Max sensitivity val for sens var {}: ".format(sensvars[k]), np.ma.max(np.abs(sens_masked[k])))
+        print("Min sensitivity val for sens var {}: ".format(sensvars[k]),
+                                    np.ma.min(np.abs(sens_masked[k])))
+        print("Max sensitivity val for sens var {}: ".format(sensvars[k]),
+                                    np.ma.max(np.abs(sens_masked[k])))
         for i in range(fullensnum):
             # Apply percent sensfield and missing masks to member
             mem_masked = np.ma.masked_array(memvar[k,i], mask=(tmask[k]))
@@ -203,6 +205,7 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
                 error[k,i,:,:] = sens_masked[k,:,:]*diff[k,i,:,:]
                 #print("Max Error:", np.max(error[k,i,:,:]))
             else:
+                # Currently testing Brian's subsetting strategy
                 error[k,i,:,:] = mem_masked[:,:]-anlvar_masked[k,:,:]
             # Restructure for later mask
             error[k,i][tmask[k]] = np.NaN
@@ -343,7 +346,7 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
     # Sum total error and choose members with least error for subset
     summed_error = np.zeros((fullensnum))
     for i in range(fullensnum):
-        summed_error[i] = np.nansum(np.abs(error_masked[:,i,:,:]))/np.ma.size(error_masked[:,i,:,:])
+        summed_error[i] = np.absolute(np.nansum(error_masked[:,i,:,:]))/np.ma.size(error_masked[:,i,:,:])
     print("Min/Max Summed Error:", np.min(summed_error), np.max(summed_error))
     print("Npts for member {}".format(1), np.ma.size(error_masked[:,0,:,:]))
     print("Npts for member {}".format(i+1), np.ma.size(error_masked[:,i,:,:]))

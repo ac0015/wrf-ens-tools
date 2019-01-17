@@ -11,6 +11,8 @@ from datetime import datetime
 from datetime import timedelta
 from interp_analysis import subprocess_cmd, fromDatetime
 
+package_dir = os.path.dirname(os.path.abspath(__file__))
+
 #################
 # Sens class
 #################
@@ -100,6 +102,7 @@ class Sens:
         yr, mo, day, hr = fromDatetime(self._run)
         if ensbasepath is None:
             # Assume Austin's using this on quanah
+            # TO-DO: Replace this lazy feature
             fullpath = "/lustre/research/bancell/aucolema/HWT2016runs/"
             self._dir = fullpath + "{}{}{}{}/".format(yr, mo, day, hr)
         else:
@@ -429,7 +432,8 @@ class Sens:
             os.popen('cp {} {}'.format(sens_mem, SENSoutfile))
             os.popen('cp {} {}'.format(r_mem, Routfile))
 
-        args = "module load intel; /lustre/work/aucolema/enkfDART/src/meancalcSENS >meancalcSENS.out"
+        meancalcpath = os.path.join(package_dir, 'meancalcSENS')
+        args = "{} >meancalcSENS.out".format(meancalcpath)
         subprocess_cmd(args)
         return
 
@@ -457,7 +461,8 @@ class Sens:
         else:
             sens_exec = "esensSPC"
 
-        args = "module load intel; /lustre/work/aucolema/enkfDART/src/{} <{} >esens.out".format(sens_exec, self._sensin)
+        esenspath = os.path.join(package_dir, sens_exec)
+        args = "{} <{} >esens.out".format(esenspath, self._sensin)
         subprocess_cmd(args)
         return
 
@@ -467,7 +472,9 @@ class Sens:
         to 'SENSvals.nc'.
         """
         os.chdir(self._dir)
-        args = "module load intel; /lustre/work/aucolema/enkfDART/src/sensvector <{} >sensvector.out".format(self._sensin)
+        sensvecpath = os.path.join(package_dir, 'sensvector')
+        args = "{} <{} >sensvector.out".format(sensvecpath,
+                                                                self._sensin)
         subprocess_cmd(args)
         return
 

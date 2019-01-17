@@ -12,8 +12,6 @@ Created on Tue Mar 27 10:03:04 2018
 """
 
 import matplotlib
-matplotlib.use('agg')
-
 import os
 import csv
 import sys
@@ -21,21 +19,22 @@ import numpy as np
 from netCDF4 import Dataset
 from cartopy import crs as ccrs
 from cartopy import feature as cfeat
-from matplotlib import pyplot as plt
-#from matplotlib.mlab import griddata
-#from interp_analysis import bilinear_interp
 import nclcmaps
+from matplotlib import pyplot as plt
 import matplotlib.patches as patches
+from matplotlib.colors import LinearSegmentedColormap
 from datetime import timedelta, datetime
 from copy import copy
 import coordinateSystems as cs
 import pyproj
 import scipy as sp
-from matplotlib.colors import LinearSegmentedColormap
 from scipy import ndimage
 from subprocess import call
 import cmocean
 from scipy.ndimage.filters import gaussian_filter
+
+# For building module-relative paths
+package_dir = os.path.dirname(os.path.abspath(__file__))
 
 ########################################################
 # Slice information
@@ -68,14 +67,6 @@ from scipy.ndimage.filters import gaussian_filter
 #  23 - td2
 #  24 - u10
 #  25 - v10
-#
-# Rfuncs
-#  1 - Avg Sim Refl
-#  2 - Max Sim Refl
-#  3 - Avg UH
-#  4 - Max UH
-#  5 - Accum PCP
-#  6 - Max Wind Spd
 ##########################################################
 
 package_directory = os.path.dirname(os.path.abspath(__file__))
@@ -155,7 +146,7 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2,
             ct = ct+1
 
     #Get lats and lons for practically perfect grid
-    ppfile = '/lustre/work/aucolema/scripts/pperf_grid_template.npz'
+    ppfile = os.path.join(package_dir, 'pperf_grid_template.npz')
     f = np.load(ppfile)
     lon = f["lon"]
     lat = f["lat"]
@@ -545,14 +536,15 @@ def plotSPC(outputdir, rbox, responsedate, wrfrefpath, stormreports=False):
         print("No hail or tornado reports to plot")
     return
 
-def calc1hrPaintball(datem, hour, variable, members, nx, ny, thresh):
+def calc1hrPaintball(datem, hour, variable, members, nx, ny, thresh,
+                    base='/lustre/research/bancell/aucolema/HWT2016runs/{}/'):
+    if base == '/lustre/research/bancell/aucolema/HWT2016runs/{}/':
+        base.format(datem)
     hour='%02d' % int(hour)
     start=int(hour)-1; start='%02d' % start
 
     numens = len(members)
     memcount = 0
-    base='/lustre/research/bancell/aucolema/HWT2016runs/' + datem  +'/'
-
     ntimes=[1]
 
     ####################################################################
@@ -591,12 +583,13 @@ def calc1hrPaintball(datem, hour, variable, members, nx, ny, thresh):
     return paintball
 
 def calc6hrPaintball(datem, hour, variable, members, nx, ny, varstr,
-                    thresh):
+                    thresh, base='/lustre/research/bancell/aucolema/HWT2016runs/{}/'):
+    if base == '/lustre/research/bancell/aucolema/HWT2016runs/{}/':
+        base.format(datem)
     hour='%02d' % int(hour)
     start=int(hour)-6; start='%02d' % start
     numens = len(members)
     memcount = 0
-    base='/lustre/scratch/aucolema/' + datem + '/'
     print(base)
 
     ######## DATETIME PROCESSING ########################################
@@ -801,7 +794,7 @@ def plotHrlySPC(outputdir, runinit, rbox, numtimes, wrfrefpath):
     return
 
 def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
-                  subsettype='uhmax', nbrhd=30):
+                  subsettype='uhmax', nbrhd=30, base='/lustre/scratch/aucolema/'):
     '''
     Plots three six panel plots for three response functions
     at a specified time and area around a response box in the following
@@ -827,11 +820,12 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
                     hours). If left None, uses rtime from esens.in
     subsettype --- optional string specifying response function used to
                     subset. Only affects figure namefor organizational purposes.
+    base --------- if not using this on Quanah file system, specify an ensemble
+                    base path for directory.
     '''
     # Base dir
     yr, mo, day, hr = str(dirdate)[:4], str(dirdate)[4:6], str(dirdate)[6:8], str(dirdate)[8:10]
     runinit = datetime(year=int(yr), month=int(mo), day=int(day), hour=int(hr))
-    base='/lustre/scratch/aucolema/'
 
     # Get subset data
     subsetdat = np.genfromtxt(base + dirdate + '/esens.in', dtype=str)

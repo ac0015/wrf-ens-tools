@@ -23,12 +23,12 @@ import csv
 import sys
 
 def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
-    '''
+    """
     A method which interpolates a function
     z(grid1x, grid1y) of a grid (grid1x, grid1y) to another
     grid (grid2x, grid2y). Returns an array from the approximated
     function of the second grid (approximation of z(grid2x, grid2y)).
-    '''
+    """
     # Pair flattened x and y values as coordinates
     coords_from = list(zip(grid1y.flatten(), grid1x.flatten()))
     Z = z.flatten()
@@ -41,13 +41,13 @@ def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
 
 def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
                          wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'):
-    '''
+    """
     Interpolates storm reports valid over a
     1-hr or 6-hr time frame to the
     native TTU WRF grid. Returns the WRF grid
     in the form of binary hits and misses based
     on SPC storm report locations.
-    '''
+    """
     #Get initialization date
     rdate = runinitdate + timedelta(hours=rtime)
     # Since reports are from 12Z - 1159Z, make sure
@@ -144,7 +144,7 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
         return grid
 
 def calc_prac_perf_native_grid(runinitdate, sixhr, rtime, sigma=2):
-    '''
+    """
     Implementation of practically perfect probability
     calculations from Robert Hepper's code. This calculates
     practically perfect probabilities on the native WRF grid.
@@ -168,7 +168,7 @@ def calc_prac_perf_native_grid(runinitdate, sixhr, rtime, sigma=2):
     -------
     returns tuple containing pract perf probs
     and lons/lats (respectively) of pperf grid
-    '''
+    """
     #Get initialization date
     runinitdatef = runinitdate.strftime('%y%m%d')
     rdate = runinitdate + timedelta(hours=rtime)
@@ -269,7 +269,7 @@ def calc_prac_perf_native_grid(runinitdate, sixhr, rtime, sigma=2):
     return pperf, wrflon, wrflat
 
 def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2):
-    '''
+    """
     Implementation of practically perfect probability
     calculations adapted from Robert Hepper's code.
     Practically perfect probs are calculated on a grid
@@ -295,7 +295,7 @@ def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2):
     -------
     returns tuple containing pract perf probs
     and lons/lats (respectively) of pperf grid
-    '''
+    """
     #Get initialization date
     runinitdatef = runinitdate.strftime('%y%m%d')
     rdate = runinitdate + timedelta(hours=rtime)
@@ -405,7 +405,7 @@ def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2):
     return pperf, wrflon, wrflat
 
 def dist_mask(xind, yind, xpts, ypts, r):
-    '''
+    """
     Calculates a mask that evaluates to true in locations
     where gridpoints are within a given radius and false
     in locations where gridpoints are outside the radius.
@@ -422,7 +422,7 @@ def dist_mask(xind, yind, xpts, ypts, r):
     -------
     returns a mask of shape xpts.shape that contains True's
     where the grid is less than the given radius
-    '''
+    """
     return (np.sqrt(((xind - xpts)**2) + ((yind - ypts)**2)) <= r)
 
 #############################################################
@@ -432,7 +432,7 @@ def dist_mask(xind, yind, xpts, ypts, r):
 def FSS(probpath, obspath, fhr, var='updraft_helicity',
         thresh=25., rboxpath=None, prob_var='P_HYD',
         smooth_w_sigma=None):
-    '''
+    """
     Calculates fractional skill score for a probabilstic
     ensemble forecast, Obs need to be pre-interpolated
     to native model grid.
@@ -494,7 +494,7 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
                 subsets, then returns 9e9.
     sigma ---- sigma value of practically perfect stored
                 in obspath.
-    '''
+    """
     # Open probabilistic forecast and observational datasets
     probdat = Dataset(probpath)
     obsdat = Dataset(obspath)
@@ -575,7 +575,7 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
 
 def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
                 thresh=25., rboxpath=None, sixhr=False, nbrhd=0.):
-    '''
+    """
     Calculates reliability for a probabilstic
     ensemble forecast and returns it. Obs
     need to be pre-interpolated to native model grid.
@@ -628,7 +628,7 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
     response box for each bin, observation hit rates for the response box for each
     bin (if not verifying subsets, will return arrays of zeros for the response box
     metrics).
-    '''
+    """
     print('Starting reliability calculations...')
     prob_bins = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     # Open probabilistic forecast and observational datasets
@@ -770,3 +770,159 @@ def mse(predictions, targets, axis=None, nan=False):
     else:
         mse_data = np.nanmean(((predictions - targets) ** 2), axis=axis)
     return mse_data
+
+
+def scipyReliability(probpath, runinitdate, fhr, obpath=None,
+                var='updraft_helicity', thresh=25., rboxpath=None,
+                sixhr=False, nbrhd=0.):
+    """
+    Calculates reliability for a probabilstic
+    ensemble forecast and returns it. Obs
+    need to be pre-interpolated to native model grid.
+
+    Inputs
+    ------
+    probpath --- path to netCDF file containing
+                 probability values. IMPORTANT
+                 NOTE - prob file is expected to
+                 be organized like in probcalcSUBSET.f
+                  Variable P_HYD[0,i,:,:]:
+                   i         Var
+                  [0]   Refl > 40 dBZ probs
+                  [1]   UH > 25 m2/s2 probs
+                  [2]   UH > 40 m2/s2 probs
+                  [3]   UH > 100 m2/s2 probs
+                  [4]   Wind Speed > 40 mph probs
+    obpath ------ path to binary observations gridded to
+                  the native WRF domain. If set to None,
+                  will automatically calculate gridded obs.
+    runinitdate - datetime obj describing model initiation
+                  time. Used to pull correct storm reports.
+    fhr --------- integer describing response time in number
+                  of forecast hours.
+    var --------- string describing variable to verify.
+                  Only supports 'updraft_helicity'
+                  option as of right now.
+    thresh ------ float describing threshold of
+                  variable to use when
+                  pulling probs. Choices
+                  for UH are 25, 40, and 100 m2/s2.
+                  Choices for Reflectivity and
+                  Wind Speed are 40 (dbz) and
+                  40 (mph) respectively.
+    rboxpath ---- optional path to sensitivity calc
+                  input file. Only needed if verifying
+                  subsets. Otherwise
+                  leave as None.
+    sixhr ------- option of calculating 1 hours worth
+                  or 6 hours worth of SPC storm reports.
+                  If set to True, assuming probabilities are
+                  also valid over a 6-hour period.
+    nbrhd ------- neighborhood distance in km used with the
+                  probability calculations.
+
+    Outputs
+    -------
+    returns an array of probability bins, forecast frequencies for the total domain
+    of each bin, observation hit rates for each bin, forecast frequencies for the
+    response box for each bin, observation hit rates for the response box for each
+    bin (if not verifying subsets, will return arrays of zeros for the response box
+    metrics).
+    """
+    print('Starting reliability calculations...')
+    prob_bins = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    # Open probabilistic forecast and observational datasets
+    probdat = Dataset(probpath)
+
+    # Choose correct indices based on variable and threshold
+    probinds = {'reflectivity' : {40 : 0},
+                'updraft_helicity' : {25 : 1, 40 : 2, 100 : 3},
+                'wind_speed' : {40 : 4}}
+
+    if var == 'updraft_helicity':
+        if obpath is not None:
+            dat = Dataset(obpath)
+            times = dat.variables['fhr'][:]
+            inds = np.where(times == fhr)
+            grid = dat.variables['nearest_neighbor'][inds][0]
+        else:
+            grid = nearest_neighbor_spc(runinitdate, sixhr, fhr, nbrhd=0.)
+    else:
+        raise ValueError('Sorry, support for {} is not yet built in.'.format(var))
+    # Pull and splice probability variable
+    probvar = probdat.variables['P_HYD'][0]
+    d = probinds[var]
+    fcstprobs = probvar[d[int(thresh)]]
+    wrf.disable_xarray()
+    lats = wrf.getvar(probdat, 'lat')
+    lons = wrf.getvar(probdat, 'lon')
+    dx = probdat.DX / 1000. # dx in km
+    # Get arrays of x and y indices for distance calculations
+    yinds, xinds = np.meshgrid(np.arange(len(lats[:])), np.arange(len(lons[0,:])))
+
+    # Sort probabilities into bins
+    fcstfreq_tot = np.zeros((len(prob_bins)))   # N probs falling into bin for whole domain
+    fcstfreq_rbox = np.zeros((len(prob_bins)))  # N probs in rbox falling into bin
+    ob_hr_tot = np.zeros((len(prob_bins)))      # Ob hit rate for bin and whole domain
+    ob_hr_rbox = np.zeros((len(prob_bins)))     # Ob hit rate for bin in rbox
+
+    # Create mask for isolating response box in grid if applicable
+    if rboxpath is not None:
+        sensin = np.genfromtxt(rboxpath, dtype=str)
+        rbox = sensin[4:8]
+        llon, ulon, llat, ulat = np.array(rbox, dtype=float)
+        lonmask = (lons > llon) & (lons < ulon)
+        latmask = (lats > llat) & (lats < ulat)
+        mask = lonmask & latmask
+        masked_probs = fcstprobs[mask]
+
+    for i in range(len(prob_bins)):
+        hits = 0
+        prob = prob_bins[i]
+        fcstinds = np.where((np.abs(fcstprobs - prob) <= 10) & (fcstprobs < prob))
+        fcstfreq_tot[i] = len(fcstinds[0])
+        if fcstfreq_tot[i] == 0:
+            ob_hr_tot[i] = 9e9
+        else:
+            r = nbrhd / dx
+            hits = np.sum(ndimage.convolve(fcstinds, weights=grid))
+            print(hits)
+            # for fcstind in list(zip(fcstinds[0].ravel(), fcstinds[1].ravel())):
+            #     r = nbrhd/dx
+            #     mask = dist_mask(fcstind[1], fcstind[0], xinds, yinds, r)
+            #     masked_grid = np.ma.masked_array(grid, mask=~mask)
+            #     if (masked_grid == 1).any():
+            #         hits += 1
+            tot =  len(list(zip(fcstinds[0].ravel(),
+                                        fcstinds[1].ravel())))
+            ob_hr_tot[i] = hits / tot
+            print("Total Hits/Tot: ", hits, tot)
+        # If verifying subsets, we want the reliability inside the response box
+        if rboxpath is not None:
+            fcstinds = np.where((np.abs(masked_probs - prob) <= 10) & (masked_probs < prob))
+            print(np.shape(fcstinds))
+            fcstfreq_rbox[i] = len(fcstinds[0])
+            if fcstfreq_rbox[i] == 0:
+                ob_hr_rbox[i] = 9e9
+            else:
+                r = nbrhd / dx
+                hits = np.sum(ndimage.convolve(fcstinds, weights=grid))
+                # for fcstind in list(zip(fcstinds[0].ravel(), fcstinds[1].ravel())):
+                #     r = nbrhd/dx
+                #     mask = dist_mask(fcstind[1], fcstind[0], xinds, yinds, r)
+                #     masked_grid = np.ma.masked_array(grid, mask=~mask)
+                #     if (masked_grid == 1).any():
+                #         hits += 1
+                tot = len(list(zip(fcstinds[0].ravel(),
+                                            fcstinds[1].ravel())))
+                ob_hr_tot[i] = hits / tot
+                print("Rbox Hits/Total: ", hits, tot)
+
+    totmask = (ob_hr_tot == 9e9)
+    rboxmask = (ob_hr_rbox == 9e9)
+    fcst_freq_all_masked = np.ma.masked_array(fcstfreq_tot, mask=totmask)
+    ob_hr_all_masked = np.ma.masked_array(ob_hr_tot, mask=totmask)
+    fcst_freq_rbox_masked =  np.ma.masked_array(fcstfreq_rbox, mask=rboxmask)
+    ob_hr_rbox_masked =  np.ma.masked_array(ob_hr_rbox, mask=rboxmask)
+
+    return prob_bins, fcst_freq_all_masked, ob_hr_all_masked, fcst_freq_rbox_masked, ob_hr_rbox_masked
