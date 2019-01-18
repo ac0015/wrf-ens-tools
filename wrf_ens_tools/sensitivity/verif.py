@@ -13,8 +13,8 @@ from wrf_ens_tools.calc import FSS, Reliability
 import cartopy.crs as ccrs
 import cartopy.feature as cfeat
 # import cmocean
-from wrf_ens_tools.sensitivity.subset import Subset
-from wrf_ens_tools.plots.nclcmaps import *
+from wrf_ens_tools.sensitivity import Subset
+from wrf_ens_tools.plots import nclcmaps
 
 
 def storeEnsStats(ensprobpath, obpath, reliabilityobpath,

@@ -22,7 +22,7 @@ from cartopy import feature as cfeat
 from matplotlib import pyplot as plt
 #from matplotlib.mlab import griddata
 #from interp_analysis import bilinear_interp
-import wrf_ens_tools.plots.nclcmaps as nclcmaps
+from wrf_ens_tools.plots import nclcmaps
 import matplotlib.patches as patches
 from matplotlib.colors import LinearSegmentedColormap
 from datetime import timedelta, datetime

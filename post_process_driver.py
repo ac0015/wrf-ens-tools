@@ -7,8 +7,8 @@ Created on Tue Aug  7 19:21:54 2018
 """
 
 from datetime import datetime, timedelta
-from wrf_ens_tools.sensitivity.sens import Sens
-from wrf_ens_tools.sensitivity.subset import Subset
+from wrf_ens_tools.sensitivity import Sens
+from wrf_ens_tools.sensitivity import Subset
 import os
 import sys
 

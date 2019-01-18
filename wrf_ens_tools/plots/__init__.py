@@ -1,2 +1,2 @@
-from .verif import *
 from .nclcmaps import *
+from .plotting import *
