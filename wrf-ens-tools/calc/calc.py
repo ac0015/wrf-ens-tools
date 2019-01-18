@@ -15,12 +15,12 @@ from netCDF4 import Dataset, date2num
 from datetime import timedelta
 from subprocess import call
 from scipy import ndimage
-import matplotlib.pyplot as plt
 import pyproj
 import scipy as sp
 import os
 import csv
 import sys
+
 
 def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
     """
@@ -39,8 +39,10 @@ def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
 
     return interpolated_z
 
+
 def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
-                         wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'):
+                         wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs'
+                                    '/2016050800/wrfoutREFd2'):
     """
     Interpolates storm reports valid over a
     1-hr or 6-hr time frame to the
@@ -48,7 +50,7 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
     in the form of binary hits and misses based
     on SPC storm report locations.
     """
-    #Get initialization date
+    # Get initialization date
     rdate = runinitdate + timedelta(hours=rtime)
     # Since reports are from 12Z - 1159Z, make sure
     #  we are grabbing the correct date.
@@ -61,14 +63,14 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
     print('Pullng SPC reports from ', runinitdatef)
     print('Response time ', rdate)
 
-    ########## Using Robert Hepper's code for nearest neighbor ######
-    ########## w/out calculating practically perfect ################
-    #Get reports CSV file from web
+    # Using Robert Hepper's code for nearest neighbor
+    # w/out calculating practically perfect
+    # Get reports CSV file from web
     rptfile = runinitdatef+'_rpts_filtered.csv'
     add = 'www.spc.noaa.gov/climo/reports/'+rptfile
     call(['wget',add])
 
-    #Make lists of report lats and lons
+    # Make lists of report lats and lons
     try:
         with open(rptfile) as csvf:
             r = csv.reader(csvf)
@@ -97,11 +99,11 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
     dx = dat.DX / 1000.
     dat.close()
 
-    #If there aren't any reports, zero across grid
+    # If there aren't any reports, zero across grid
     if length == 0:
         grid = np.zeros_like(lon)
 
-    #Otherwise, let's grid the reports
+    # Otherwise, let's grid the reports
     else:
         # If six hour, mask reports by valid times in window
         if sixhr:
@@ -113,21 +115,24 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
             mask = [(hr == (hour-1)%24) for hr in time]
             print('Reports valid {} to {}'.format((hour-1)%24,hour))
         try:
-            #Set up empty grid onto correct projection
+            # Set up empty grid onto correct projection
             grid = np.zeros_like(lon)
-            NDFD = pyproj.Proj("+proj=lcc +lat_1=25 +lat_2=25 +lon_0=-95 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+            NDFD = pyproj.Proj("+proj=lcc +lat_1=25 +lat_2=25 +lon_0=-95 +x_0=0 +y_0=0 +"
+                               "ellps=WGS84 +datum=WGS84 +units=m +no_defs")
 
             # Convert lat/lon grid into projection space
             X, Y = NDFD(lon, lat)
             # Convert lat/lon reports into projection space
             x, y = NDFD(lons, lats)
 
-            #Create KD-Tree for effecient lookup
+            # Create KD-Tree for effecient lookup
             gpoints = np.array(list(zip(X.ravel(), Y.ravel())))
             gtree = sp.spatial.cKDTree(gpoints)
 
-            # Run the KD-Tree to get distances to nearest gridbox and then index of nearest grid point
-            dists, inds = gtree.query(np.array(list(zip(x, y))), distance_upper_bound=1000000000.)
+            # Run the KD-Tree to get distances to nearest gridbox and then
+            # index of nearest grid point
+            dists, inds = gtree.query(np.array(list(zip(x, y))),
+                                      distance_upper_bound=1000000000.)
 
             # Convert index of 1D array into index of 2D lat/lon array
             xind, yind = np.unravel_index(inds[mask], X.shape)
@@ -143,11 +148,11 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
 
         return grid
 
-def calc_prac_perf_native_grid(runinitdate, sixhr, rtime, sigma=2):
+
+def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     """
-    Implementation of practically perfect probability
-    calculations from Robert Hepper's code. This calculates
-    practically perfect probabilities on the native WRF grid.
+    Implementation of SPC practically perfect
+    calculations adapted from SPC code
 
     Inputs
     ------
@@ -308,19 +313,19 @@ def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2):
     print('Pullng SPC reports from ', runinitdatef)
     print('Response time ', rdate)
 
-    #Get report CSV file from web
+    # Get yesterday's reports CSV file from web
     rptfile = runinitdatef+'_rpts_filtered.csv'
     add = 'www.spc.noaa.gov/climo/reports/'+rptfile
     call(['wget',add])
 
-    #Make lists of report lats and lons
+    # Make lists of report lats and lons
     try:
-    	with open(rptfile) as csvf:
+        with open(rptfile) as csvf:
             r = csv.reader(csvf)
             mylist = list(r)
     except IOError:
-    	print('Report CSV file could not be opened.')
-    	sys.exit()
+        print('Report CSV file could not be opened.')
+        sys.exit()
 
     length = len(mylist)-3
     time = [0]*length
@@ -334,7 +339,7 @@ def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2):
             lons[ct] = float(f[6])
             ct = ct+1
 
-    #Get lats and lons for practically perfect grid
+    # Get lats and lons for practically perfect grid
     ppfile = '/lustre/work/aucolema/scripts/pperf_grid_template.npz'
     f = np.load(ppfile)
     lon = f["lon"]
@@ -349,38 +354,45 @@ def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2):
     dat.close()
     mod = 24
 
-    #If there aren't any reports, practically perfect is zero across grid
+    # If there aren't any reports, practically perfect is zero across grid
     if length == 0:
-    	pperf = np.zeros_like(wrflon)
-    #Otherwise, let's grid the reports
+        pperf = np.zeros_like(wrflon)
+    # Otherwise, let's grid the reports
     else:
         # If six hour, mask reports by valid times in window
         if sixhr:
             hour = rdate.hour
-            hours = [(hour - i)%mod for i in range(1,7)]
+            hours = [(hour - i) % 24 for i in range(1, 7)]
             mask = [(hr in hours) for hr in time]
             print("Reports valid {} to {}".format(hours[-1], hours[0]))
         else:
             hour = rdate.hour
-            mask = [(hr == (hour-1)%mod) for hr in time]
-            print('Reports valid {} to {}'.format((hour-1)%mod,hour))
+            mask = [(hr == (hour-1)%24) for hr in time]
+            print('Reports valid {} to {}'.format((hour-1) % 24, hour))
+            # print('Report hours from reports used:', np.array(time)[mask])
+            # print(mask)
+            # print(time)
         try:
-            #Set up empty grid onto correct projection
+            # Set up empty grid onto correct projection
             grid = np.zeros_like(lon)
-            NDFD = pyproj.Proj("+proj=lcc +lat_1=25 +lat_2=25 +lon_0=-95 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+            NDFD = pyproj.Proj("+proj=lcc +lat_1=25 +lat_2=25 +lon_0=-95 +x_0=0 +y_0=0 +"
+                               "ellps=WGS84 +datum=WGS84 +units=m +no_defs")
 
             # Convert lat/lon grid into projection space
             X, Y = NDFD(lon, lat)
             WRFX, WRFY = NDFD(wrflon, wrflat)
+            # print(WRFX.shape, WRFY.shape)
             # Convert lat/lon reports into projection space
             x, y = NDFD(lons, lats)
 
-            #Create KD-Tree for effecient lookup
+            # Create KD-Tree for effecient lookup
             gpoints = np.array(list(zip(X.ravel(), Y.ravel())))
             gtree = sp.spatial.cKDTree(gpoints)
 
-            # Run the KD-Tree to get distances to nearest gridbox and then index of nearest grid point
-            dists, inds = gtree.query(np.array(list(zip(x, y))), distance_upper_bound=1000000000.)
+            # Run the KD-Tree to get distances to nearest gridbox and
+            # then index of nearest grid point
+            dists, inds = gtree.query(np.array(list(zip(x, y))),
+                                      distance_upper_bound=1000000000.)
 
             # Convert index of 1D array into index of 2D lat/lon array
             xind, yind = np.unravel_index(inds[mask], X.shape)
@@ -388,8 +400,9 @@ def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2):
             # Loop through all points and increment that grid cell by 1
             for xi, yi in zip(xind, yind):
                 grid[xi, yi] = 1
+            # print(grid)
 
-        	# Gaussian smoother over our grid to create practically perfect probs
+            # Gaussian smoother over our grid to create practically perfect probs
             tmppperf = ndimage.gaussian_filter(grid,sigma=sigma, order=0)
 
             # Interpolate to WRF grid
@@ -398,11 +411,12 @@ def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2):
         except:
             pperf = np.zeros_like(wrflon)
 
-    #Remove report CSV file
+    # Remove report CSV file
     os.remove(rptfile)
     print("Practically Perfect min/max: ", np.min(pperf), ' , ', np.max(pperf))
 
     return pperf, wrflon, wrflat
+
 
 def dist_mask(xind, yind, xpts, ypts, r):
     """
@@ -423,15 +437,15 @@ def dist_mask(xind, yind, xpts, ypts, r):
     returns a mask of shape xpts.shape that contains True's
     where the grid is less than the given radius
     """
-    return (np.sqrt(((xind - xpts)**2) + ((yind - ypts)**2)) <= r)
+    return np.sqrt(((xind - xpts)**2) + ((yind - ypts)**2)) <= r
 
 #############################################################
 # Begin verification metrics
 #############################################################
 
+
 def FSS(probpath, obspath, fhr, var='updraft_helicity',
-        thresh=25., rboxpath=None, prob_var='P_HYD',
-        smooth_w_sigma=None):
+        thresh=25., rboxpath=None):
     """
     Calculates fractional skill score for a probabilstic
     ensemble forecast, Obs need to be pre-interpolated
@@ -504,9 +518,9 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
     print("Fcst hr for FSS calc: ", fhrs[obind])
 
     # Choose correct indices based on variable and threshold
-    probinds = {'reflectivity' : {40 : 0},
-                'updraft_helicity' : {25 : 1, 40 : 2, 100 : 3},
-                'wind_speed' : {40 : 4}}
+    probinds = {'reflectivity': {40: 0},
+                'updraft_helicity': {25: 1, 40: 2, 100: 3},
+                'wind_speed': {40: 4}}
     # If UH, pull practically perfect
     if var == 'updraft_helicity':
         obs = obsdat.variables['practically_perfect'][:]
@@ -520,8 +534,8 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
     probs = probvar[d[int(thresh)]]
 
     # If sigma was passed, use it to smooth probs
-    if smooth_w_sigma is not None:
-        probs = ndimage.gaussian_filter(probs, sigma=smooth_w_sigma)
+    # if smooth_w_sigma is not None:
+    #     probs = ndimage.gaussian_filter(probs, sigma=smooth_w_sigma)
 
     # First calculate FBS (Fractions Brier Score) on whole grid
     wrf.disable_xarray()
@@ -572,6 +586,7 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
         print('NULL time/case, cannot calculate FSS')
 
     return fss_all, fss_rbox, sig
+
 
 def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
                 thresh=25., rboxpath=None, sixhr=False, nbrhd=0.):
@@ -624,20 +639,19 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
     Outputs
     -------
     returns an array of probability bins, forecast frequencies for the total domain
-    of each bin, observation hit rates for each bin, forecast frequencies for the
-    response box for each bin, observation hit rates for the response box for each
-    bin (if not verifying subsets, will return arrays of zeros for the response box
-    metrics).
+     of each bin, observation hit rates for each bin, forecast frequencies for the
+     response box for each bin, observation hit rates for the response box for each
+     bin (if not verifying subsets, will return arrays of zeros for the response box
+     metrics).
     """
-    print('Starting reliability calculations...')
     prob_bins = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     # Open probabilistic forecast and observational datasets
     probdat = Dataset(probpath)
 
     # Choose correct indices based on variable and threshold
-    probinds = {'reflectivity' : {40 : 0},
-                'updraft_helicity' : {25 : 1, 40 : 2, 100 : 3},
-                'wind_speed' : {40 : 4}}
+    probinds = {'reflectivity': {40: 0},
+                'updraft_helicity': {25: 1, 40: 2, 100: 3},
+                'wind_speed': {40: 4}}
 
     if var == 'updraft_helicity':
         if obpath is not None:
@@ -719,7 +733,8 @@ def Reliability(probpath, runinitdate, fhr, obpath=None, var='updraft_helicity',
     fcst_freq_rbox_masked =  np.ma.masked_array(fcstfreq_rbox, mask=rboxmask)
     ob_hr_rbox_masked =  np.ma.masked_array(ob_hr_rbox, mask=rboxmask)
 
-    return prob_bins, fcst_freq_all_masked, ob_hr_all_masked, fcst_freq_rbox_masked, ob_hr_rbox_masked
+    return (prob_bins, fcst_freq_all_masked, ob_hr_all_masked, fcst_freq_rbox_masked,
+            ob_hr_rbox_masked)
 
 
 def rmse(predictions, targets, axis=None, nan=False):

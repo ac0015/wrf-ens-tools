@@ -8,12 +8,9 @@ import matplotlib.pyplot as plt
 from netCDF4 import Dataset
 import numpy as np
 import os
-from os import chdir
-from datetime import datetime, timedelta
+from datetime import timedelta
 from calc import FSS, Reliability
 from subset import Subset
-import matplotlib.gridspec as gridspec
-import matplotlib.cm as cm
 import nclcmaps
 import cartopy.crs as ccrs
 import cartopy.feature as cfeat
