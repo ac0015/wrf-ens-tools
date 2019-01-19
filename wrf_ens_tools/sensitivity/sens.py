@@ -473,8 +473,7 @@ class Sens:
         """
         os.chdir(self._dir)
         sensvecpath = os.path.join(package_dir, 'sensvector')
-        args = "{} <{} >sensvector.out".format(sensvecpath,
-                                                                self._sensin)
+        args = "{} <{} >sensvector.out".format(sensvecpath, self._sensin)
         subprocess_cmd(args)
         return
 

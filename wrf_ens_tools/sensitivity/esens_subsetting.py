@@ -211,8 +211,8 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
             error[k,i][tmask[k]] = np.NaN
     # Mask all error data that was masked from member fields
     error_masked = np.ma.masked_array(error, mask=(error == np.NaN))
-    print("Min/Max absolute weighted error: ", np.nanmin(error_masked), np.nanmax(error_masked))
-    print("Index of max abs weighted error: ", np.where(error_masked == np.nanmax(error_masked)))
+    print("Min/Max weighted error: ", np.nanmin(error_masked), np.nanmax(error_masked))
+    print("Index of max weighted error: ", np.where(error_masked == np.nanmax(error_masked)))
 
     ####################################################
     # Test by plotting resulting sensitivity field

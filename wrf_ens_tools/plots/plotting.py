@@ -353,7 +353,7 @@ def plotProbs(probpath, wrfrefpath, rbox, time, nbrhd, outpath='', subset=False)
         # Plot probs
         cflevels = np.linspace(10., 100., 10)
         prob = ax.contourf(lons, lats, problist[i], cflevels, transform=ccrs.PlateCarree(),
-                           cmap=nclcmaps.cmap("perc2_9lev"), antialiased=True)
+                           cmap=nclcmaps("perc2_9lev"), antialiased=True)
         fig.colorbar(prob, fraction=0.046, pad=0.04, orientation='horizontal', label='Probability (Percent)')
         # Format titles and figure names
         ax.set_title(r'Probability of {} at f{} with Neighborhood of {} km'.format(rstrs[i],
@@ -450,7 +450,7 @@ def plotDiff(fensprobpath, subprobpath, wrfrefpath, rbox, time,
         # Set plot difference levels
         cflevels = np.linspace(-80., 80., 161)
         prob = ax.contourf(lons, lats, gaussian_filter(subsetprob[i] - fullensprob[i], 1), cflevels, transform=ccrs.PlateCarree(),
-                           cmap=nclcmaps.cmap('BlWhRe'),alpha=1, antialiased=True)
+                           cmap=nclcmaps('BlWhRe'),alpha=1, antialiased=True)
         if stormreports:
             ax.scatter(np.array(tlons, dtype=float), np.array(tlats, dtype=float),
                        transform=ccrs.PlateCarree(), c='red', edgecolor='k', label='Tor Report', alpha=0.6)
@@ -1105,7 +1105,7 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
             if np.max(pperf) > 0.:
                 print(np.max(pperf*100))
                 cfpperf = ax4.contourf(plons, plats, pperf*100, cflevs,
-                                        cmap=nclcmaps.cmap("perc2_9lev"),
+                                        cmap=nclcmaps("perc2_9lev"),
                                         transform=ccrs.PlateCarree(),
                                         alpha=0.8, zorder=1)
                 pperfcbar = fig.colorbar(cfpperf, ax=ax4, fraction=0.03, pad=0.04, orientation='vertical',
@@ -1127,12 +1127,12 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
         # Plot probs
         fullprob = ax1.contourf(lons, lats, gaussian_filter(fullensprobs[i], 1),
                             cflevs, transform=ccrs.PlateCarree(),
-                            cmap=nclcmaps.cmap("perc2_9lev"), zorder=1, antialiased=True)
+                            cmap=nclcmaps("perc2_9lev"), zorder=1, antialiased=True)
         subprob = ax2.contourf(lons, lats, gaussian_filter(subsetprobs[i], 1), cflevs,
                             transform=ccrs.PlateCarree(),
-                            cmap=nclcmaps.cmap("perc2_9lev"), zorder=1, antialiased=True)
+                            cmap=nclcmaps("perc2_9lev"), zorder=1, antialiased=True)
         deltalevs = np.linspace(-100., 100., 21)
-        deltacmap = copy(nclcmaps.cmap('ViBlGrWhYeOrRe'))
+        deltacmap = copy(nclcmaps('ViBlGrWhYeOrRe'))
         deltaprob = ax3.contourf(lons, lats,
                                 gaussian_filter(subsetprobs[i] - fullensprobs[i], 1),
                                  deltalevs, transform=ccrs.PlateCarree(),

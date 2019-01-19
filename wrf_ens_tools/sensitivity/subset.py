@@ -11,16 +11,12 @@ from datetime import timedelta
 from wrf_ens_tools.sensitivity import Sens
 from wrf_ens_tools.sensitivity import ensSubset
 from wrf_ens_tools.post import fromDatetime, interpRAPtoWRF, subprocess_cmd
-# import wrf_ens_tools.plots as plotting
 from wrf_ens_tools.plots import plotProbs, plotDiff, plotSixPanels
 from netCDF4 import Dataset
 from wrf_ens_tools.calc import FSS, Reliability
 from wrf_ens_tools.post import process_wrf
 
 package_dir = os.path.dirname(os.path.abspath(__file__))
-
-
-
 
 #################
 # Subset class
@@ -72,7 +68,6 @@ class Subset:
         wrfanalysis_to_post_path -- optional path to half post-processed WRF analysis
                                     produced by reduced file process specific to TTU.
         """
-        self._modpath = os.path.dirname(plotting.__file__)
         self._sens = sens
         self._fullens = np.arange(1,sens.getEnsnum()+1,1)
         self._subsize = subset_size
@@ -122,10 +117,10 @@ class Subset:
         self._dx = Dataset(sens.getRefFileD2()).DX
 
     def __str__(self):
-        return "Subset object with full ensemble of {} members, subset size of {}, and " \
-               "using the {} subsetting method with a threshold of {}, neighborhood of {}, " \
-               "response threshold of {} and these sensitivity variables: {}. Using {} " \
-               "analysis for subsetting. Based on Sens object: \n {}".format(self._sens.getEnsnum(),
+        return "Subset object with full ensemble of {} members, subset size of {}, \nand " \
+               "using the {} subsetting method with a threshold of {}, \nneighborhood of {}, " \
+               "response threshold of {} and these sensitivity variables: {}. \nUsing {} " \
+               "analysis for subsetting. \n\nBased on Sens object: \n {}".format(self._sens.getEnsnum(),
                                                     self._subsize, self._method, str(self._percent),
                                                     str(self._nbr), str(self._thresh),
                                                     ','.join(self.getSensVars()),
@@ -262,6 +257,8 @@ class Subset:
 
     def OLDcalcProbs(self, members):
         """
+        DEPRECATED! Use calcProbs() instead.
+
         Runs the fortran executable calcprobSUBSET to calculate
         probabilities for any number of ensemble members. Takes
         an input file with ensemble number, ensemble members,
@@ -470,7 +467,7 @@ class Subset:
             probout = self._subprob
 
         # Create list of args to create input file with
-        args = [self._modpath + "/create_probcalc_inputfile.bash"]
+        args = ["{}/create_probcalc_inputfile.bash".format(package_dir)]
         args.append(fname)
         args.append(str(len(members)))
         args.append(' '.join([str(mem) for mem in members]))

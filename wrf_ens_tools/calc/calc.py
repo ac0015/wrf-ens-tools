@@ -21,6 +21,7 @@ import os
 import csv
 import sys
 
+package_dir =  os.path.dirname(os.path.abspath(__file__))
 
 def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
     """
@@ -273,7 +274,8 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
 
     return pperf, wrflon, wrflat
 
-def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2):
+def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2,
+                            wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'):
     """
     Implementation of practically perfect probability
     calculations adapted from Robert Hepper's code.
@@ -340,15 +342,14 @@ def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2):
             ct = ct+1
 
     # Get lats and lons for practically perfect grid
-    ppfile = 'pperf_grid_template.npz'
+    ppfile = '{}/pperf_grid_template.npz'.format(package_dir)
     f = np.load(ppfile)
     lon = f["lon"]
     lat = f["lat"]
     f.close()
 
     # Get WRF lats/lons as pperf grid
-    ppfile = '/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'
-    dat = Dataset(ppfile)
+    dat = Dataset(wrfrefpath)
     wrflon = dat.variables['XLONG'][0]
     wrflat = dat.variables['XLAT'][0]
     dat.close()

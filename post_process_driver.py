@@ -61,7 +61,7 @@ for rfunc in rfunctions:
                      rfuncstr=rfunc, rthresh=thresh,
                      ensbasepath=direc)
             print('Using sens obj:', str(S))
-            S.runAll()
+            #S.runAll()
             # Calculate Full Ensemble probs and Practically Perfect probs
             rtime = S.getRTime()
             rdate = init + timedelta(hours=rtime)
