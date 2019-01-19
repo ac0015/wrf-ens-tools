@@ -8,13 +8,13 @@ Created on Thu Feb  8 10:11:46 2018
 import numpy as np
 import os, csv, subprocess
 from datetime import timedelta
-from sens import Sens
-from esens_subsetting import ensSubset
-from interp_analysis import fromDatetime, interpRAPtoWRF, subprocess_cmd
-import research_plotting
+from wrf_ens_tools.sensitivity import Sens
+from wrf_ens_tools.sensitivity import ensSubset
+from wrf_ens_tools.post import fromDatetime, interpRAPtoWRF, subprocess_cmd
+from wrf_ens_tools.plots import plotProbs, plotDiff, plotSixPanels
 from netCDF4 import Dataset
-from calc import FSS, Reliability
-from post_process import gen_dict, process_wrf, postTTUWRFanalysis
+from wrf_ens_tools.calc import FSS, Reliability
+from wrf_ens_tools.post import process_wrf
 
 package_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -68,7 +68,6 @@ class Subset:
         wrfanalysis_to_post_path -- optional path to half post-processed WRF analysis
                                     produced by reduced file process specific to TTU.
         """
-        self._modpath = os.path.dirname(research_plotting.__file__)
         self._sens = sens
         self._fullens = np.arange(1,sens.getEnsnum()+1,1)
         self._subsize = subset_size
@@ -118,8 +117,14 @@ class Subset:
         self._dx = Dataset(sens.getRefFileD2()).DX
 
     def __str__(self):
-        return "Subset object with full ensemble of {} members, subset size of {}, and using the {} subsetting method with a threshold of {}, neighborhood of {}, response threshold of {} and these sensitivity variables: {}. Using {} analysis for subsetting. Based on Sens object: \n {}".format(self._sens.getEnsnum(),
-                                                    self._subsize, self._method, str(self._percent), str(self._nbr), str(self._thresh), ','.join(self.getSensVars()), str(self._analysis), str(self.getSens()))
+        return "Subset object with full ensemble of {} members, subset size of {}, \nand " \
+               "using the {} subsetting method with a threshold of {}, \nneighborhood of {}, " \
+               "response threshold of {} and these sensitivity variables: {}. \nUsing {} " \
+               "analysis for subsetting. \n\nBased on Sens object: \n {}".format(self._sens.getEnsnum(),
+                                                    self._subsize, self._method, str(self._percent),
+                                                    str(self._nbr), str(self._thresh),
+                                                    ','.join(self.getSensVars()),
+                                                    str(self._analysis), str(self.getSens()))
 
     def setSubsetMethod(self, subset_method):
         """
@@ -252,6 +257,8 @@ class Subset:
 
     def OLDcalcProbs(self, members):
         """
+        DEPRECATED! Use calcProbs() instead.
+
         Runs the fortran executable calcprobSUBSET to calculate
         probabilities for any number of ensemble members. Takes
         an input file with ensemble number, ensemble members,
@@ -460,7 +467,7 @@ class Subset:
             probout = self._subprob
 
         # Create list of args to create input file with
-        args = [self._modpath + "/create_probcalc_inputfile.bash"]
+        args = ["{}/create_probcalc_inputfile.bash".format(package_dir)]
         args.append(fname)
         args.append(str(len(members)))
         args.append(' '.join([str(mem) for mem in members]))
@@ -524,9 +531,10 @@ class Subset:
         else:
             path = fullenspath
         wrfrefpath = S.getRefFileD2()
-        research_plotting.plotProbs(path, wrfrefpath,
-                                    S.getRbox(), S.getRTime(), self._nbr, outpath=direc,
-                                    subset=use_subset)
+
+        plotProbs(path, wrfrefpath,
+                   S.getRbox(), S.getRTime(), self._nbr, outpath=direc,
+                   subset=use_subset)
         return
 
     def researchPlotDiffs(self, verif_day=False):
@@ -547,9 +555,9 @@ class Subset:
         date = S.getRunInit()
         SPCdate = str(date)[2:10].replace('-','')
 
-        research_plotting.plotDiff(fullenspath, subsetpath, wrfrefpath,
-                                   S.getRbox(), S.getRTime(), SPCdate,
-                                   stormreports=verif_day)
+        plotDiff(fullenspath, subsetpath, wrfrefpath,
+                 S.getRbox(), S.getRTime(), SPCdate,
+                 stormreports=verif_day)
         return
 
     def plotSixPanels(self, storm_reports=True):
@@ -558,12 +566,10 @@ class Subset:
         yr, mo, day, hr = fromDatetime(S.getRunInit(), interp=False)
         rfunclabel = S.getRString().replace(' ','').lower()
         dirdate = str(yr) + str(mo) + str(day) + str(hr)
-        research_plotting.plotSixPanels(dirdate, storm_reports,
-                                        self.getSubMembers(),
-                                        sixhour=S.getSixHour(),
-                                        time=S.getRTime(),
-                                        subsettype=rfunclabel,
-                                        nbrhd=self._nbr)
+        plotSixPanels(dirdate, storm_reports,
+                      self.getSubMembers(), sixhour=False,
+                      time=S.getRTime(), subsettype=rfunclabel,
+                      nbrhd=self._nbr)
         return
 
     # def storePracPerf(self, pperfpath, sigma=2):

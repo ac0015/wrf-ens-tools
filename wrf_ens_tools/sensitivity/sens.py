@@ -9,7 +9,7 @@ import numpy as np
 import os
 from datetime import datetime
 from datetime import timedelta
-from interp_analysis import subprocess_cmd, fromDatetime
+from wrf_ens_tools.post import subprocess_cmd, fromDatetime
 
 package_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -473,8 +473,7 @@ class Sens:
         """
         os.chdir(self._dir)
         sensvecpath = os.path.join(package_dir, 'sensvector')
-        args = "{} <{} >sensvector.out".format(sensvecpath,
-                                                                self._sensin)
+        args = "{} <{} >sensvector.out".format(sensvecpath, self._sensin)
         subprocess_cmd(args)
         return
 
