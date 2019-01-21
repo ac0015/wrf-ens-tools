@@ -778,6 +778,7 @@ def ReliabilityRbox(probpath, runinitdate, fhr,  rboxpath, obpath=None,
     lats = wrf.getvar(probdat, 'lat')
     lons = wrf.getvar(probdat, 'lon')
     dx = probdat.DX / 1000. # dx in km
+    r = nbrhd/dx
     # Get arrays of x and y indices for distance calculations
     yinds, xinds = np.meshgrid(np.arange(len(lons[0,:])), np.arange(len(lats[:])))
 
@@ -811,16 +812,12 @@ def ReliabilityRbox(probpath, runinitdate, fhr,  rboxpath, obpath=None,
                 ob_hr_rbox[i] = 0
             else:
                 for fcstind in list(zip(fcstinds[0].ravel(), fcstinds[1].ravel())):
-                    # print(fcstind)
-                    r = nbrhd/dx
                     mask = dist_mask(fcstind[1], fcstind[0], xinds, yinds, r)
                     masked_grid = np.ma.masked_array(grid, mask=~mask)
                     if (masked_grid == 1).any():
                         hits += 1
                 tot = len(list(zip(fcstinds[0].ravel(),
                                             fcstinds[1].ravel())))
-                # print("{} == {}?:".format(tot, fcstfreq_rbox[i]),
-                #                         (tot == fcstfreq_rbox))
                 ob_hr_rbox[i] = hits / tot
                 print("Rbox Hits/Total: ", hits, tot)
 
@@ -933,6 +930,8 @@ def scipyReliabilityRbox(probpath, runinitdate, fhr,  rboxpath,
 
     # Apply smoother to act as a neighborhood
     nbrhd_grid = ndimage.gaussian_filter(grid, sigma=r, order=0)
+    # print(grid[grid>0])
+    # import matplotlib.pyplot as plt
     # fig, ((ax1, ax2, ax3)) = plt.subplots(1, 3, sharex='col', sharey='row')
     # clevs = np.linspace(0,1,50)
     # og = ax1.contourf(grid, clevs, cmap="viridis")

@@ -13,7 +13,7 @@ from wrf_ens_tools.sensitivity import ensSubset
 from wrf_ens_tools.post import fromDatetime, interpRAPtoWRF, subprocess_cmd
 from wrf_ens_tools.plots import plotProbs, plotDiff, plotSixPanels
 from netCDF4 import Dataset
-from wrf_ens_tools.calc import FSS, Reliability
+from wrf_ens_tools.calc import FSS, scipyReliabilityRbox, ReliabilityRbox
 from wrf_ens_tools.post import process_wrf
 
 package_dir = os.path.dirname(os.path.abspath(__file__))
@@ -723,17 +723,29 @@ class Subset:
                       thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
             sub_fss = FSS(subprobpath, pperfpath, rtimedate, var='updraft_helicity',
                       thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
-#            fens_reliability = Reliability(fensprobpath, S.getRunInit(), S.getRTime(),
-#                                           obpath=reliabilityobpath, var='updraft_helicity',
-#                                           thresh=self._thresh, rboxpath=S.getDir()+'esens.in',
-#                                           sixhr=False, nbrhd=self._nbr)
-#            sub_reliability = Reliability(subprobpath, S.getRunInit(), S.getRTime(),
-#                                           obpath=reliabilityobpath, var='updraft_helicity',
-#                                           thresh=self._thresh, rboxpath=S.getDir()+'esens.in',
-#                                           sixhr=False, nbrhd=self._nbr)
-#            # prob_bins will stay the same, so OK to clobber
-#            prob_bins, f_fcstfreq_tot, f_ob_hr_tot, f_fcstfreq_rbox, f_ob_hr_rbox = fens_reliability
-#            prob_bins, s_fcstfreq_tot, s_ob_hr_tot, s_fcstfreq_rbox, s_ob_hr_rbox = sub_reliability
+            fens_reliability = ReliabilityRbox(fensprobpath, S.getRunInit(),
+                                          S.getRTime(),
+                                          obpath=reliabilityobpath,
+                                          var='updraft_helicity',
+                                          thresh=self._thresh,
+                                          rboxpath=S.getDir()+'esens.in',
+                                          sixhr=False, nbrhd=self._nbr)
+            sub_reliability = ReliabilityRbox(subprobpath,
+                                          S.getRunInit(), S.getRTime(),
+                                          obpath=reliabilityobpath,
+                                          var='updraft_helicity',
+                                          thresh=self._thresh,
+                                          rboxpath=S.getDir()+'esens.in',
+                                          sixhr=False, nbrhd=self._nbr)
+            # prob_bins will stay the same, so OK to clobber
+            prob_bins, f_fcstfreq_rbox, f_ob_hr_rbox = fens_reliability
+            prob_bins, s_fcstfreq_rbox, s_ob_hr_rbox = sub_reliability
+            fens_rel_dict = {'rel_bins' : prob_bins,
+                            'fcst_freq_rbox' : f_fcstfreq_rbox,
+                            'ob_hr_rbox' : f_ob_hr_rbox}
+            sub_rel_dict = {'rel_bins' : prob_bins,
+                            'fcst_freq_rbox' : s_fcstfreq_rbox,
+                            'ob_hr_rbox' : s_ob_hr_rbox}
             f_fss_tot, f_fss_rbox, sig = fens_fss
             s_fss_tot, s_fss_rbox, sig = sub_fss
         else:
@@ -753,22 +765,20 @@ class Subset:
                         'Full_Ens_FSS_Total', 'Full_Ens_FSS_Rbox',
                         'Subset_FSS_Total', 'Subset_FSS_Rbox',
                         'Prac_Perf_Sigma', 'Neighborhood',
-                        'Response_Thresh', 'Sub_Members']
-#                        'Full_Ens_Reliability_Total',
-#                        'Full_Ens_Reliability_Rbox', 'Subset_Reliability_Total',
-#                        'Subset_Reliability_Rbox']
+                        'Response_Thresh', 'Sub_Members',
+                        'Full_Ens_Reliability_Rbox',
+                        'Subset_Reliability_Rbox']
                 outfile_writer = csv.writer(outfile, delimiter=',')
                 outfile_writer.writerow(cols)
+                print(len(cols))
             # Add row valid for current subset
             entry = [str(S.getRunInit()), S.getSensTime(), self._subsize,
                      self._analysis_type, self._sensvars,
                      list(self._methodchoices.keys())[self._method-1],
                      self._percent, S.getRString(), S.getRTime(), S.getRbox(),
                      f_fss_tot, f_fss_rbox, s_fss_tot, s_fss_rbox,
-                     sig[0], self._nbr, self._thresh, self.getSubMembers()]
-#            (prob_bins, f_fcstfreq_tot, f_ob_hr_tot),
-#                     (prob_bins, f_fcstfreq_rbox, f_ob_hr_rbox),
-#                     (prob_bins, s_fcstfreq_tot, s_ob_hr_tot),
-#                     (prob_bins, s_fcstfreq_rbox, s_ob_hr_rbox)]
+                     sig[0], self._nbr, self._thresh, self.getSubMembers(),
+                     fens_rel_dict, sub_rel_dict]
+            print(len(entry))
             outfile_writer = csv.writer(outfile, delimiter=',')
             outfile_writer.writerow(entry)

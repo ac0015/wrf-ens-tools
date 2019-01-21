@@ -9,7 +9,7 @@ from netCDF4 import Dataset
 import numpy as np
 import os
 from datetime import timedelta
-from wrf_ens_tools.calc import FSS, Reliability
+from wrf_ens_tools.calc import FSS, ReliabilityTotal, scipyReliabilityRbox
 import cartopy.crs as ccrs
 import cartopy.feature as cfeat
 # import cmocean
@@ -100,7 +100,8 @@ def storeEnsStats(ensprobpath, obpath, reliabilityobpath,
             statsout.createDimension('bins', 10)
             statsout.createVariable('Run_Init', str, ('Times'))
             statsout.createVariable('Neighborhood', float, ('Times'))
-            statsout.createVariable('Full_Ens_Reliability_Total', float, ('Times', 'rel', 'bins'))
+            statsout.createVariable('Full_Ens_Reliability_Total',
+                                    float, ('Times', 'rel', 'bins'))
             statsout.createVariable('Full_Ens_FSS_Total', float, ('Times'))
 
             ###########################################################
@@ -131,12 +132,12 @@ def storeEnsStats(ensprobpath, obpath, reliabilityobpath,
             fens_fss = FSS(ensprobpath, obpath, rtimedate, var='updraft_helicity',
                           thresh=probthresh, rboxpath=rboxpath)
             ## Reliability next... ##
-            fens_reliability = Reliability(ensprobpath, runinit, fhr,
+            fens_reliability = ReliabilityTotal(ensprobpath, runinit, fhr,
                                             obpath=None, var='updraft_helicity',
                                             thresh=probthresh, rboxpath=rboxpath,
                                             sixhr=False)
             # If not subsetting, the reliability values for the response box will all be missing vals
-            prob_bins, f_fcstfreq_tot, ob_hr_tot, f_fcstfreq_rbox, ob_hr_rbox = fens_reliability
+            prob_bins, f_fcstfreq_tot, ob_hr_tot = fens_reliability
             f_fss_tot, f_fss_rbox, sig = fens_fss
             # Start pulling variables
             init = statsout.variables['Run_Init']
@@ -155,7 +156,8 @@ def storeEnsStats(ensprobpath, obpath, reliabilityobpath,
             fensfsstot[n] = f_fss_tot
             pperfsig[n] = sig
             nbr[n] = nbrhd
-            fens_rel_tot[n,:,:] = np.atleast_2d(np.vstack((prob_bins, f_fcstfreq_tot, ob_hr_tot)))[:]
+            fens_rel_tot[n,:,:] = np.atleast_2d(np.vstack((prob_bins,
+                                                f_fcstfreq_tot, ob_hr_tot)))[:]
             statsout.close()
             return
 
@@ -367,13 +369,13 @@ def storeUHStatsCSV(outpath, probpath, pperfpath, reliabilityobpath,
     if os.path.exists(pperfpath):
         fens_fss = FSS(probpath, pperfpath, veriftime, var=probvar,
                   thresh=probthresh, rboxpath=S.getDir()+'esens.in')
-        fens_reliability = Reliability(probpath, runinit, verif_fhr,
+        fens_reliability = ReliabilityTotal(probpath, runinit, verif_fhr,
                                        obpath=reliabilityobpath, var='updraft_helicity',
                                        thresh=probthresh, rboxpath=None,
                                        sixhr=False, nbrhd=nbrhd)
         # rbox parameters will be zeros since we didn't provide any response box
         #   information.
-        prob_bins, f_fcstfreq_tot, f_ob_hr_tot, f_fcstfreq_rbox, f_ob_hr_rbox = fens_reliability
+        prob_bins, f_fcstfreq_tot, f_ob_hr_tot = fens_reliability
         f_fss_tot, f_fss_rbox, sig = fens_fss
     else:
         raise FileNotFoundError('Please run storePracPerf() or set correct obpath.')
@@ -393,8 +395,7 @@ def storeUHStatsCSV(outpath, probpath, pperfpath, reliabilityobpath,
             outfile_writer.writerow(cols)
         # Add row valid for current ensemble
         entry = [runinit, var, verif_fhr, f_fss_tot, sig,
-                self._nbr, (prob_bins, f_fcstfreq_tot, f_ob_hr_tot),
-                 (prob_bins, f_fcstfreq_rbox, f_ob_hr_rbox)]
+                self._nbr, probthresh, (prob_bins, f_fcstfreq_tot, f_ob_hr_tot)]
         outfile_writer = csv.writer(outfile, delimiter=',')
         outfile_writer.writerow(entry)
 

@@ -590,8 +590,8 @@ def storePracPerfSPCGrid(modelinit, fcsthrs, outpath, nbrhd, dx, sixhour=False):
     netcdf_out.close()
     return
 
-# Interpolate storm reports to nearest grid point
-def storeNearestNeighbor(modelinit, fcsthrs, outpath):
+# Interpolate storm reports to nearest grid point - mainly for reliability calc
+def storeNearestNeighbor(modelinit, fcsthrs, outpath, sixhour=True):
     '''
     Calculate hourly nearest neighbor on WRF grid.
     Save to netCDF file for verification.
@@ -607,6 +607,9 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath):
                 hours since modelinit time.
     outpath --- string specifying absolute path of
                 netCDF output.
+    sixhour --- boolean specifying whether to store
+                six-hour or one-hour period of
+                nearest neighbor storm reports
 
     Outputs
     -------
@@ -615,17 +618,18 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath):
     # Create outfile
     netcdf_out = Dataset(outpath, "w", format="NETCDF4")
     # Calculate pperf to pull lat/lon data
-    grid = nearest_neighbor_spc(modelinit, False, fcsthrs[0], nbrhd=0)
+    grid = nearest_neighbor_spc(modelinit, sixhour, fcsthrs[0], nbrhd=0)
     # Set up netCDF
     netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
     netcdf_out.createDimension('Time', len(fcsthrs))
     netcdf_out.createDimension('south_north', len(grid[:,0]))
     netcdf_out.createDimension('west_east', len(grid[0,:]))
     times = netcdf_out.createVariable('fhr', int, ('Time'))
-    nearest_out = netcdf_out.createVariable('nearest_neighbor', float, ('Time', 'south_north', 'west_east'))
+    nearest_out = netcdf_out.createVariable('nearest_neighbor', float, ('Time',
+                                            'south_north', 'west_east'))
     # Populate outfile with pperf
     for t in range(len(fcsthrs)):
-        grid = nearest_neighbor_spc(modelinit, False, fcsthrs[t], nbrhd=0)
+        grid = nearest_neighbor_spc(modelinit, sixhour, fcsthrs[t], nbrhd=0)
         nearest_out[t] = grid[:]
         times[t] = fcsthrs[t]
     netcdf_out.close()
