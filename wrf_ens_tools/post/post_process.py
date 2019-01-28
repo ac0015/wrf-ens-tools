@@ -535,7 +535,9 @@ def storePracPerfNativeGrid(modelinit, fcsthrs, outpath, nbrhd, dx, sixhour=Fals
     netcdf_out.close()
     return
 
-def storePracPerfSPCGrid(modelinit, fcsthrs, outpath, nbrhd, dx, sixhour=False):
+def storePracPerfSPCGrid(modelinit, fcsthrs, outpath,
+                            nbrhd, dx, sixhour=False,
+                            wrfrefpath='/lustre/scratch/aucolema/2016052600/wrfoutREFd2'):
     '''
     Calculate hourly or six-hourly practically perfect on 80-km grid-spacing
     SPC grid, which is then interpolated to WRF grid and stored to netCDF
@@ -571,7 +573,8 @@ def storePracPerfSPCGrid(modelinit, fcsthrs, outpath, nbrhd, dx, sixhour=False):
     # Calculate pperf to pull lat/lon data
     sigma = nbrhd / dx
     pperf, lon, lat = calc_prac_perf_spc_grid(modelinit, sixhour,
-                                     fcsthrs[0], sigma=sigma)
+                                     fcsthrs[0], sigma=sigma,
+                                     wrfrefpath=wrfrefpath)
     # Set up netCDF
     netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
     netcdf_out.createDimension('Time', len(fcsthrs))
@@ -591,7 +594,9 @@ def storePracPerfSPCGrid(modelinit, fcsthrs, outpath, nbrhd, dx, sixhour=False):
     return
 
 # Interpolate storm reports to nearest grid point - mainly for reliability calc
-def storeNearestNeighbor(modelinit, fcsthrs, outpath, sixhour=True):
+def storeNearestNeighbor(modelinit, fcsthrs, outpath, sixhour=True,
+                            wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs'
+                                       '/2016050800/wrfoutREFd2'):
     '''
     Calculate hourly nearest neighbor on WRF grid.
     Save to netCDF file for verification.
@@ -618,7 +623,8 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, sixhour=True):
     # Create outfile
     netcdf_out = Dataset(outpath, "w", format="NETCDF4")
     # Calculate pperf to pull lat/lon data
-    grid = nearest_neighbor_spc(modelinit, sixhour, fcsthrs[0], nbrhd=0)
+    grid = nearest_neighbor_spc(modelinit, sixhour, fcsthrs[0], nbrhd=0.,
+                                wrfrefpath=wrfrefpath)
     # Set up netCDF
     netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
     netcdf_out.createDimension('Time', len(fcsthrs))
@@ -629,7 +635,8 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, sixhour=True):
                                             'south_north', 'west_east'))
     # Populate outfile with pperf
     for t in range(len(fcsthrs)):
-        grid = nearest_neighbor_spc(modelinit, sixhour, fcsthrs[t], nbrhd=0)
+        grid = nearest_neighbor_spc(modelinit, sixhour, fcsthrs[t], nbrhd=0.,
+                                    wrfrefpath=wrfrefpath)
         nearest_out[t] = grid[:]
         times[t] = fcsthrs[t]
     netcdf_out.close()

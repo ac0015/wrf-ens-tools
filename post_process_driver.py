@@ -39,7 +39,7 @@ percents = [0., 10., 20., 30., 40., 50., 60., 70., 80., 90.]
 uh_thresh = [25., 40., 100.]
 nbrs = [30.0]
 pperfnbrs = [80.0]
-rfunctions = ["UH Coverage", "UH Max"]
+rfunctions = ["UH Coverage"]
 analysis = ["WRF", "RAP"]
 analysis_fhr = 0
 ########################################################################
@@ -70,7 +70,7 @@ for rfunc in rfunctions:
             # Using neighborhood for reliability obs
             # TO-DO:Convert reliability to allow for six hour time frames
             for nbr in nbrs:
-                sub = Subset(S, nbrhd=nbr)
+                sub = Subset(S, nbrhd=nbr, thresh=thresh)
                 sub.calcProbs(sub._fullens)
                 outpath = direc + 'reliability_ob_nbr{}.nc'.format(int(nbr))
                 print("Currently in:", os.getcwd())
@@ -79,7 +79,8 @@ for rfunc in rfunctions:
                 if os.path.exists(outpath):
                    os.remove(outpath)
                 post.storeNearestNeighbor(init, [rtime],
-                                          str(outpath))
+                                          str(outpath), sixhour=sixhour,
+                                          wrfrefpath="/lustre/scratch/aucolema/2016052600/wrfoutREFd2")
                 print("YAY I'm done with reliability ob stuff")
             for pperfnbr in pperfnbrs:
                 # Calculate practically perfect w different distance sigma vals
@@ -93,7 +94,8 @@ for rfunc in rfunctions:
                 post.storePracPerfSPCGrid(init, [rtime],
                                    str(outpath), nbrhd=pperfnbr,
                                    dx=80., # Using 80-km SPC grid for AMS results
-                                   sixhour=sixhour)
+                                   sixhour=sixhour,
+                                   wrfrefpath='/lustre/scratch/aucolema/2016052600/wrfoutREFd2')
                                    #dx=sub.getHorizGridSpacingD2()/1000.,
 
             del sub
@@ -117,9 +119,9 @@ for rfunc in rfunctions:
                         sub.interpRAP()
             del sub
             if sixhour:
-                statspath = direc + 'brians_subsetting_way_sixhr_stats_sig1_nbr30.csv'
+                statspath = direc + 'brians_subsetting_way_sixhr_stats_sig1_nbr30.nc'
             else:
-                statspath = direc + 'onehr_stats_sig1_nbr30.csv'
+                statspath = direc + 'onehr_stats_sig1_nbr30.nc'
             # Get stats for different subset combos
             for anl in analysis:
                 for subsize in subset_sizes:
@@ -138,7 +140,7 @@ for rfunc in rfunctions:
                                     #sub.plotSixPanels()
                                     reliabilityobpath = direc + 'reliability_ob_nbr{}.nc'.format(int(nbr))
                                     for obpath in pperfpaths:
-                                        sub.storeUHStatsCSV(outpath=statspath,
+                                        sub.storeUHStatsNetCDF(outpath=statspath,
                                                             pperfpath=obpath,
                                                             reliabilityobpath=reliabilityobpath)
                                     del sub

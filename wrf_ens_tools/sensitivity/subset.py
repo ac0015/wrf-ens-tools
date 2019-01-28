@@ -15,6 +15,7 @@ from wrf_ens_tools.plots import plotProbs, plotDiff, plotSixPanels
 from netCDF4 import Dataset
 from wrf_ens_tools.calc import FSS, scipyReliabilityRbox, ReliabilityRbox
 from wrf_ens_tools.post import process_wrf
+import xarray as xr
 
 package_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -586,117 +587,117 @@ class Subset:
     #     storePracPerf(S.getRunInit(), fhrs, pperfpath, sigma=sigma)
     #     return
 
-    def storeUHStats(self, outpath, pperfpath, reliabilityobpath):
-        """
-        Calculates and stores subset info along with
-        six verification metrics, which are calculated
-        for both the full ensemble and the subset within and
-        outside of the response box. Stores in a netCDF
-        file with path specified by outpath and uses
-        practically perfect stored in pperfpath for
-        metric calculations.
-        """
-        S = self.getSens()
-        fensprobpath = S.getDir() + "probs/" + self._fensprob
-        subprobpath = S.getDir() + "probs/" + self._subprob
-        rtimedate = S.getRunInit() + timedelta(hours=S.getRTime())
-        if os.path.exists(outpath):
-            statsout = Dataset(outpath, 'a')
-        else:
-            statsout = Dataset(outpath, 'w')
-            statsout.createDimension('Times',  None)
-            statsout.createDimension('vars', None)
-            statsout.createDimension('rbox', 4)
-            # Reliability diagram will need three variables
-            statsout.createDimension('rel', 3)
-            statsout.createDimension('bins', 10)
-            statsout.createVariable('Run_Init', str, ('Times'))
-            statsout.createVariable('Sens_Time', int, ('Times'))
-            statsout.createVariable('Analysis', str, ('Times'))
-            statsout.createVariable('Sens_Vars', str, ('Times', 'vars'))
-            statsout.createVariable('Subset_Size', int, ('Times'))
-            statsout.createVariable('Subset_Method', str, ('Times'))
-            statsout.createVariable('Sens_Threshold', int, ('Times'))
-            statsout.createVariable('Response_Func', str, ('Times'))
-            statsout.createVariable('Response_Time', int, ('Times'))
-            statsout.createVariable('Response_Box', float, ('Times', 'rbox'))
-            statsout.createVariable('Full_Ens_FSS_Total', float, ('Times'))
-            statsout.createVariable('Full_Ens_FSS_Rbox', float, ('Times'))
-            statsout.createVariable('Subset_FSS_Total', float, ('Times'))
-            statsout.createVariable('Subset_FSS_Rbox', float, ('Times'))
-            statsout.createVariable('Prac_Perf_Sigma', int, ('Times'))
-            statsout.createVariable('Neighborhood', float, ('Times'))
-            statsout.createVariable('Response_Thresh', float, ('Times'))
-            statsout.createVariable('Full_Ens_Reliability_Total', float, ('Times', 'rel', 'bins'))
-            statsout.createVariable('Full_Ens_Reliability_Rbox', float, ('Times', 'rel', 'bins'))
-            statsout.createVariable('Subset_Reliability_Total', float, ('Times', 'rel', 'bins'))
-            statsout.createVariable('Subset_Reliability_Rbox', float, ('Times', 'rel', 'bins'))
-        if os.path.exists(pperfpath):
-            fens_fss = FSS(fensprobpath, pperfpath, rtimedate, var='updraft_helicity',
-                      thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
-            sub_fss = FSS(subprobpath, pperfpath, rtimedate, var='updraft_helicity',
-                      thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
-            fens_reliability = Reliability(fensprobpath, S.getRunInit(), S.getRTime(),
-                                           obpath=reliabilityobpath, var='updraft_helicity',
-                                           thresh=self._thresh, rboxpath=S.getDir()+'esens.in',
-                                           sixhr=False, nbrhd=self._nbr)
-            sub_reliability = Reliability(subprobpath, S.getRunInit(), S.getRTime(),
-                                           obpath=reliabilityobpath, var='updraft_helicity',
-                                           thresh=self._thresh, rboxpath=S.getDir()+'esens.in',
-                                           sixhr=False, nbrhd=self._nbr)
-            # prob_bins will stay the same, so OK to clobber
-            prob_bins, f_fcstfreq_tot, f_ob_hr_tot, f_fcstfreq_rbox, f_ob_hr_rbox = fens_reliability
-            prob_bins, s_fcstfreq_tot, s_ob_hr_tot, s_fcstfreq_rbox, s_ob_hr_rbox = sub_reliability
-            f_fss_tot, f_fss_rbox, sig = fens_fss
-            s_fss_tot, s_fss_rbox, sig = sub_fss
-            init = statsout.variables['Run_Init']
-            senstime = statsout.variables['Sens_Time']
-            subsize = statsout.variables['Subset_Size']
-            analysis = statsout.variables['Analysis']
-            sensvar = statsout.variables['Sens_Vars']
-            submethod = statsout.variables['Subset_Method']
-            thresh = statsout.variables['Sens_Threshold']
-            rfunc = statsout.variables['Response_Func']
-            resptime = statsout.variables['Response_Time']
-            respbox = statsout.variables['Response_Box']
-            fensfsstot = statsout.variables['Full_Ens_FSS_Total']
-            fensfssrbox = statsout.variables['Full_Ens_FSS_Rbox']
-            subfsstot = statsout.variables['Subset_FSS_Total']
-            subfssrbox = statsout.variables['Subset_FSS_Rbox']
-            pperfsig = statsout.variables['Prac_Perf_Sigma']
-            nbr = statsout.variables['Neighborhood']
-            respthresh = statsout.variables['Response_Thresh']
-            fens_rel_tot = statsout.variables['Full_Ens_Reliability_Total']
-            fens_rel_rbox = statsout.variables['Full_Ens_Reliability_Rbox']
-            sub_rel_tot = statsout.variables['Subset_Reliability_Total']
-            sub_rel_rbox = statsout.variables['Subset_Reliability_Rbox']
-            n = len(init)
-            #print(n, str(S.getRunInit()))
-            init[n] = str(S.getRunInit())
-            senstime[n] = S.getSensTime()
-            analysis[n] = self._analysis_type
-            sensvar[n,:] = np.atleast_2d(self._sensvars)[:]
-            subsize[n] = self._subsize
-            submethod[n] = list(self._methodchoices.keys())[self._method-1]
-            thresh[n] = self._percent
-            rfunc[n] = S.getRString()
-            resptime[n] = S.getRTime()
-            respbox[n,:] = S.getRbox()[:]
-            respthresh[n] = self._thresh
-            fensfsstot[n] = f_fss_tot
-            fensfssrbox[n] = f_fss_rbox
-            subfsstot[n] = s_fss_tot
-            subfssrbox[n] = s_fss_rbox
-            pperfsig[n] = sig
-            nbr[n] = self._nbr
-            fens_rel_tot[n,:,:] = np.atleast_2d(np.vstack((prob_bins, f_fcstfreq_tot, f_ob_hr_tot)))[:]
-            fens_rel_rbox[n,:,:] = np.atleast_2d(np.vstack((prob_bins, f_fcstfreq_rbox, f_ob_hr_rbox)))[:]
-            sub_rel_tot[n,:,:] = np.atleast_2d(np.vstack((prob_bins, s_fcstfreq_tot, s_ob_hr_tot)))[:]
-            sub_rel_rbox[n,:,:] = np.atleast_2d(np.vstack((prob_bins, s_fcstfreq_rbox, s_ob_hr_rbox)))[:]
-            statsout.close()
-        else:
-            raise FileNotFoundError('Please run storePracPerf() or set correct obpath.')
-        return
+    # def storeUHStats(self, outpath, pperfpath, reliabilityobpath):
+    #     """
+    #     Calculates and stores subset info along with
+    #     six verification metrics, which are calculated
+    #     for both the full ensemble and the subset within and
+    #     outside of the response box. Stores in a netCDF
+    #     file with path specified by outpath and uses
+    #     practically perfect stored in pperfpath for
+    #     metric calculations.
+    #     """
+    #     S = self.getSens()
+    #     fensprobpath = S.getDir() + "probs/" + self._fensprob
+    #     subprobpath = S.getDir() + "probs/" + self._subprob
+    #     rtimedate = S.getRunInit() + timedelta(hours=S.getRTime())
+    #     if os.path.exists(outpath):
+    #         statsout = Dataset(outpath, 'a')
+    #     else:
+    #         statsout = Dataset(outpath, 'w')
+    #         statsout.createDimension('Times',  None)
+    #         statsout.createDimension('vars', None)
+    #         statsout.createDimension('rbox', 4)
+    #         # Reliability diagram will need three variables
+    #         statsout.createDimension('rel', 3)
+    #         statsout.createDimension('bins', 10)
+    #         statsout.createVariable('Run_Init', str, ('Times'))
+    #         statsout.createVariable('Sens_Time', int, ('Times'))
+    #         statsout.createVariable('Analysis', str, ('Times'))
+    #         statsout.createVariable('Sens_Vars', str, ('Times', 'vars'))
+    #         statsout.createVariable('Subset_Size', int, ('Times'))
+    #         statsout.createVariable('Subset_Method', str, ('Times'))
+    #         statsout.createVariable('Sens_Threshold', int, ('Times'))
+    #         statsout.createVariable('Response_Func', str, ('Times'))
+    #         statsout.createVariable('Response_Time', int, ('Times'))
+    #         statsout.createVariable('Response_Box', float, ('Times', 'rbox'))
+    #         statsout.createVariable('Full_Ens_FSS_Total', float, ('Times'))
+    #         statsout.createVariable('Full_Ens_FSS_Rbox', float, ('Times'))
+    #         statsout.createVariable('Subset_FSS_Total', float, ('Times'))
+    #         statsout.createVariable('Subset_FSS_Rbox', float, ('Times'))
+    #         statsout.createVariable('Prac_Perf_Sigma', int, ('Times'))
+    #         statsout.createVariable('Neighborhood', float, ('Times'))
+    #         statsout.createVariable('Response_Thresh', float, ('Times'))
+    #         statsout.createVariable('Full_Ens_Reliability_Total', float, ('Times', 'rel', 'bins'))
+    #         statsout.createVariable('Full_Ens_Reliability_Rbox', float, ('Times', 'rel', 'bins'))
+    #         statsout.createVariable('Subset_Reliability_Total', float, ('Times', 'rel', 'bins'))
+    #         statsout.createVariable('Subset_Reliability_Rbox', float, ('Times', 'rel', 'bins'))
+    #     if os.path.exists(pperfpath):
+    #         fens_fss = FSS(fensprobpath, pperfpath, rtimedate, var='updraft_helicity',
+    #                   thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
+    #         sub_fss = FSS(subprobpath, pperfpath, rtimedate, var='updraft_helicity',
+    #                   thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
+    #         fens_reliability = Reliability(fensprobpath, S.getRunInit(), S.getRTime(),
+    #                                        obpath=reliabilityobpath, var='updraft_helicity',
+    #                                        thresh=self._thresh, rboxpath=S.getDir()+'esens.in',
+    #                                        sixhr=False, nbrhd=self._nbr)
+    #         sub_reliability = Reliability(subprobpath, S.getRunInit(), S.getRTime(),
+    #                                        obpath=reliabilityobpath, var='updraft_helicity',
+    #                                        thresh=self._thresh, rboxpath=S.getDir()+'esens.in',
+    #                                        sixhr=False, nbrhd=self._nbr)
+    #         # prob_bins will stay the same, so OK to clobber
+    #         prob_bins, f_fcstfreq_tot, f_ob_hr_tot, f_fcstfreq_rbox, f_ob_hr_rbox = fens_reliability
+    #         prob_bins, s_fcstfreq_tot, s_ob_hr_tot, s_fcstfreq_rbox, s_ob_hr_rbox = sub_reliability
+    #         f_fss_tot, f_fss_rbox, sig = fens_fss
+    #         s_fss_tot, s_fss_rbox, sig = sub_fss
+    #         init = statsout.variables['Run_Init']
+    #         senstime = statsout.variables['Sens_Time']
+    #         subsize = statsout.variables['Subset_Size']
+    #         analysis = statsout.variables['Analysis']
+    #         sensvar = statsout.variables['Sens_Vars']
+    #         submethod = statsout.variables['Subset_Method']
+    #         thresh = statsout.variables['Sens_Threshold']
+    #         rfunc = statsout.variables['Response_Func']
+    #         resptime = statsout.variables['Response_Time']
+    #         respbox = statsout.variables['Response_Box']
+    #         fensfsstot = statsout.variables['Full_Ens_FSS_Total']
+    #         fensfssrbox = statsout.variables['Full_Ens_FSS_Rbox']
+    #         subfsstot = statsout.variables['Subset_FSS_Total']
+    #         subfssrbox = statsout.variables['Subset_FSS_Rbox']
+    #         pperfsig = statsout.variables['Prac_Perf_Sigma']
+    #         nbr = statsout.variables['Neighborhood']
+    #         respthresh = statsout.variables['Response_Thresh']
+    #         fens_rel_tot = statsout.variables['Full_Ens_Reliability_Total']
+    #         fens_rel_rbox = statsout.variables['Full_Ens_Reliability_Rbox']
+    #         sub_rel_tot = statsout.variables['Subset_Reliability_Total']
+    #         sub_rel_rbox = statsout.variables['Subset_Reliability_Rbox']
+    #         n = len(init)
+    #         #print(n, str(S.getRunInit()))
+    #         init[n] = str(S.getRunInit())
+    #         senstime[n] = S.getSensTime()
+    #         analysis[n] = self._analysis_type
+    #         sensvar[n,:] = np.atleast_2d(self._sensvars)[:]
+    #         subsize[n] = self._subsize
+    #         submethod[n] = list(self._methodchoices.keys())[self._method-1]
+    #         thresh[n] = self._percent
+    #         rfunc[n] = S.getRString()
+    #         resptime[n] = S.getRTime()
+    #         respbox[n,:] = S.getRbox()[:]
+    #         respthresh[n] = self._thresh
+    #         fensfsstot[n] = f_fss_tot
+    #         fensfssrbox[n] = f_fss_rbox
+    #         subfsstot[n] = s_fss_tot
+    #         subfssrbox[n] = s_fss_rbox
+    #         pperfsig[n] = sig
+    #         nbr[n] = self._nbr
+    #         fens_rel_tot[n,:,:] = np.atleast_2d(np.vstack((prob_bins, f_fcstfreq_tot, f_ob_hr_tot)))[:]
+    #         fens_rel_rbox[n,:,:] = np.atleast_2d(np.vstack((prob_bins, f_fcstfreq_rbox, f_ob_hr_rbox)))[:]
+    #         sub_rel_tot[n,:,:] = np.atleast_2d(np.vstack((prob_bins, s_fcstfreq_tot, s_ob_hr_tot)))[:]
+    #         sub_rel_rbox[n,:,:] = np.atleast_2d(np.vstack((prob_bins, s_fcstfreq_rbox, s_ob_hr_rbox)))[:]
+    #         statsout.close()
+    #     else:
+    #         raise FileNotFoundError('Please run storePracPerf() or set correct obpath.')
+    #     return
 
     def storeUHStatsCSV(self, outpath, pperfpath, reliabilityobpath):
         """
@@ -746,6 +747,10 @@ class Subset:
             sub_rel_dict = {'rel_bins' : prob_bins,
                             'fcst_freq_rbox' : s_fcstfreq_rbox,
                             'ob_hr_rbox' : s_ob_hr_rbox}
+            # fens_rel_dict = np.asarray([prob_bins, f_fcstfreq_rbox,
+            #                             f_ob_hr_rbox], dtype=float)
+            # sub_rel_dict = np.asarray([prob_bins, s_fcstfreq_rbox,
+            #                             s_ob_hr_rbox], dtype=float)
             f_fss_tot, f_fss_rbox, sig = fens_fss
             s_fss_tot, s_fss_rbox, sig = sub_fss
         else:
@@ -770,7 +775,6 @@ class Subset:
                         'Subset_Reliability_Rbox']
                 outfile_writer = csv.writer(outfile, delimiter=',')
                 outfile_writer.writerow(cols)
-                print(len(cols))
             # Add row valid for current subset
             entry = [str(S.getRunInit()), S.getSensTime(), self._subsize,
                      self._analysis_type, self._sensvars,
@@ -779,6 +783,122 @@ class Subset:
                      f_fss_tot, f_fss_rbox, s_fss_tot, s_fss_rbox,
                      sig[0], self._nbr, self._thresh, self.getSubMembers(),
                      fens_rel_dict, sub_rel_dict]
-            print(len(entry))
             outfile_writer = csv.writer(outfile, delimiter=',')
             outfile_writer.writerow(entry)
+        return
+
+    def storeUHStatsNetCDF(self, outpath, pperfpath, reliabilityobpath):
+        """
+        Stores UH verification stats to netCDF4 file using xarray.
+
+        Inputs
+        ------
+        outpath ----------- absolute output filepath as a string
+        pperfpath --------- absolute filepath for practically perfect
+                            gridded data
+        reliabilityobpath - absolute filepath for reliability observational
+                            point data on ensemble grid
+
+        Outputs
+        -------
+        returns NULL and stores UH verification stats to outpath as netCDF4
+        """
+        S = self.getSens()
+        fensprobpath = S.getDir() + "probs/" + self._fensprob
+        subprobpath = S.getDir() + "probs/" + self._subprob
+        rtimedate = S.getRunInit() + timedelta(hours=S.getRTime())
+        if os.path.exists(pperfpath):
+            fens_fss = FSS(fensprobpath, pperfpath, rtimedate, var='updraft_helicity',
+                      thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
+            sub_fss = FSS(subprobpath, pperfpath, rtimedate, var='updraft_helicity',
+                      thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
+            sub_reliability = ReliabilityRbox(subprobpath,
+                                          S.getRunInit(), S.getRTime(),
+                                          obpath=reliabilityobpath,
+                                          var='updraft_helicity',
+                                          thresh=self._thresh,
+                                          rboxpath=S.getDir()+'esens.in',
+                                          sixhr=False, nbrhd=self._nbr)
+            # prob_bins will stay the same, so OK to clobber
+            prob_bins, s_fcstfreq_rbox, s_ob_hr_rbox = sub_reliability
+            f_fss_tot, f_fss_rbox, sig = fens_fss
+            s_fss_tot, s_fss_rbox, sig = sub_fss
+        else:
+            raise FileNotFoundError('Please run storePracPerf() or set correct obpath.')
+        # Create entry as xarray dataset
+        sens_vars = np.empty((1, 30), dtype="U30")
+        sens_vars[0, :len(self._sensvars)] = np.asarray(self._sensvars[:])
+        sub_mems = np.zeros((1,len(self._fullens)), dtype=int)
+        sub_mems[0, :len(self.getSubMembers())] = np.asarray(self.getSubMembers())
+        ds = xr.Dataset({'Sens_Time': (['subset'], np.atleast_1d(S.getSensTime())),
+                 'Subset_Size': (['subset'], np.atleast_1d(self._subsize)),
+                 'Analysis': (['subset'], np.atleast_1d(self._analysis_type)),
+                 'Sens_Vars':  (['subset', 'sensvar'],
+                                np.atleast_2d(sens_vars)),
+                 'Subset_Method': (['subset'],
+                    np.atleast_1d(list(self._methodchoices.keys())[self._method-1])),
+                 'Sens_Threshold': (['subset'], np.atleast_1d(self._percent)),
+                 'Response_Func': (['subset'], np.atleast_1d(S.getRString())),
+                 'Response_Time': (['subset'], np.atleast_1d(S.getRTime())),
+                 'Response_Box': (['subset', 'rbox'],
+                                    np.atleast_2d(S.getRbox())),
+                 'Full_Ens_FSS_Total': (['subset'], np.atleast_1d(f_fss_tot)),
+                 'Full_Ens_FSS_Rbox': (['subset'], np.atleast_1d(f_fss_rbox)),
+                 'Subset_FSS_Total': (['subset'], np.atleast_1d(s_fss_tot)),
+                 'Subset_FSS_Rbox': (['subset'], np.atleast_1d(s_fss_rbox)),
+                 'Prac_Perf_Sigma': (['subset'], np.atleast_1d(sig[0])),
+                 'Neighborhood': (['subset'], np.atleast_1d(self._nbr)),
+                 'Response_Thresh': (['subset'], np.atleast_1d(self._thresh)),
+                 'Subset_Fcst_Freq_Rbox': (['subset', 'prob_bins'],
+                                            np.atleast_2d(s_fcstfreq_rbox)),
+                 'Subset_Ob_Hit_Rate_Rbox': (['subset', 'prob_bins'],
+                                             np.atleast_2d(s_ob_hr_rbox)),
+                 'Subset_Members': (['subset', 'submems'],
+                                    sub_mems)},
+                 coords={'run': S.getRunInit(),
+                         # 'subset': np.arange(1),
+                         'prob_bins': prob_bins,
+                         'rbox': ['llon', 'ulon', 'llat', 'ulat']})
+        if os.path.exists(outpath):
+            og_ds = xr.open_dataset(outpath)
+            ds = xr.concat([og_ds, ds], dim='subset', data_vars='minimal')
+            og_ds.close()
+            if (self._thresh not in ds.Full_Ens_Response_Thresh.values):
+                fens_reliability = ReliabilityRbox(fensprobpath, S.getRunInit(),
+                                              S.getRTime(),
+                                              obpath=reliabilityobpath,
+                                              var='updraft_helicity',
+                                              thresh=self._thresh,
+                                              rboxpath=S.getDir()+'esens.in',
+                                              sixhr=False, nbrhd=self._nbr)
+                prob_bins, f_fcstfreq_rbox, f_ob_hr_rbox = fens_reliability
+                new_ds = xr.Dataset({'Full_Ens_Response_Thresh': (['rthresh'],
+                                            np.atleast_1d(self._thresh)),
+                                    'Full_Ens_Fcst_Freq_Rbox': (['rthresh', 'prob_bins'],
+                                            np.atleast_2d(f_fcstfreq_rbox)),
+                                    'Full_Ens_Ob_Hit_Rate_Rbox': (['rthresh', 'prob_bins'],
+                                            np.atleast_2d(f_ob_hr_rbox))},
+                                    coords={'run': S.getRunInit(),
+                                            # 'subset': np.arange(1),
+                                            'prob_bins': prob_bins,
+                                            'rbox': ['llon', 'ulon', 'llat', 'ulat']})
+                ds = xr.concat([ds, new_ds], dim='rthresh', data_vars='minimal')
+                new_ds.close()
+        else:
+            fens_reliability = ReliabilityRbox(fensprobpath, S.getRunInit(),
+                                          S.getRTime(),
+                                          obpath=reliabilityobpath,
+                                          var='updraft_helicity',
+                                          thresh=self._thresh,
+                                          rboxpath=S.getDir()+'esens.in',
+                                          sixhr=False, nbrhd=self._nbr)
+            prob_bins, f_fcstfreq_rbox, f_ob_hr_rbox = fens_reliability
+            ds["Full_Ens_Response_Thresh"] = (('rthresh'),
+                                        np.atleast_1d(self._thresh))
+            ds["Full_Ens_Fcst_Freq_Rbox"] = (('rthresh', 'prob_bins'),
+                                        np.atleast_2d(f_fcstfreq_rbox))
+            ds["Full_Ens_Ob_Hit_Rate_Rbox"] = (('rthresh', 'prob_bins'),
+                                        np.atleast_2d(f_ob_hr_rbox))
+        ds.to_netcdf(outpath, unlimited_dims=['subset'])
+
+        return

@@ -37,10 +37,10 @@
 
 import numpy as np
 from netCDF4 import Dataset
-#import matplotlib.pyplot as plt
-#import cartopy.crs as ccrs
-#from cartopy import feature as cfeat
-#import cmocean
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+from cartopy import feature as cfeat
+import cmocean
 
 def point(matrix):
     '''
@@ -218,135 +218,141 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
     # Test by plotting resulting sensitivity field
     ####################################################
 
-#    # Get lat/lon data for plot extent
-#    wrfrefpath = '/lustre/research/bancell/aucolema/HWT2016runs/2016051300/wrfoutREF'
-#    wrfref = Dataset(wrfrefpath)
-#    clon, clat = wrfref.CEN_LON, wrfref.CEN_LAT
-#    tlat1, tlat2 = wrfref.TRUELAT1, wrfref.TRUELAT2
-#
-#    try:
-#        # Plot
-#        fig = plt.figure(figsize=(10, 10))
-#
-#        # Build projection/map
-#        ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal(central_longitude=clon,
-#                                                                               central_latitude=clat,
-#                                                                               standard_parallels=(tlat1, tlat2)))
-#        state_borders = cfeat.NaturalEarthFeature(category='cultural',
-#                       name='admin_1_states_provinces_lakes', scale='50m', facecolor='None')
-#        ax.add_feature(state_borders, linestyle="-", edgecolor='dimgray')
-#        ax.add_feature(cfeat.BORDERS, edgecolor='dimgray')
-#        ax.add_feature(cfeat.COASTLINE, edgecolor='dimgray')
-#        ax.set_extent([-120., -75., 20., 50.])
-#        cflevs = np.linspace(-1*maxval[0], maxval[0], 101.)
-#        #print(cflevs)
-#        sensfield_threshold = ax.contourf(lons, lats, sensmat_masked[0,:,:],
-#                                          vmin=cflevs[0], vmax=cflevs[-1], levels=cflevs, cmap='bwr',
-#                                          transform=ccrs.PlateCarree())
-#        fig.colorbar(sensfield_threshold, fraction=0.046, pad=0.04, ax=ax, orientation='horizontal',
-#                         label='Sensitivity Magnitude')
-#        plt.title('Sensitivity Field of ' + varkeys[0].replace("_"," "))
-#        plt.savefig('sensfield.png')
-#        plt.close()
-#    except:
-#        plt.close()
-#        print('Plotting sensitivity field as a check failed.')
-#
-#    try:
-#        # Plot
-#        fig = plt.figure(figsize=(10, 10))
-#
-#        # Build projection/map
-#        ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal(central_longitude=clon,
-#                                                                               central_latitude=clat,
-#                                                                               standard_parallels=(tlat1, tlat2)))
-#        state_borders = cfeat.NaturalEarthFeature(category='cultural',
-#                       name='admin_1_states_provinces_lakes', scale='50m', facecolor='None')
-#        ax.add_feature(state_borders, linestyle="-", edgecolor='dimgray')
-#        ax.add_feature(cfeat.BORDERS, edgecolor='dimgray')
-#        ax.add_feature(cfeat.COASTLINE, edgecolor='dimgray')
-#        ax.set_extent([-120., -75., 20., 50.])
-#        cflevs = np.linspace(-1*maxval[0], maxval[0], 101.)
-#        #print(cflevs)
-#        sensfield_threshold = ax.contourf(lons, lats, sens_masked[0,:,:],
-#                                          vmin=cflevs[0], vmax=cflevs[-1], levels=cflevs, cmap='bwr',
-#                                          transform=ccrs.PlateCarree())
-#        fig.colorbar(sensfield_threshold, fraction=0.046, pad=0.04, ax=ax, orientation='horizontal',
-#                         label='Sensitivity Magnitude')
-#        plt.title('Masked Sensitivity Field of ' + varkeys[0].replace("_"," "))
-#        plt.savefig('sensfield_threshold.png')
-#        plt.close()
-#    except:
-#        plt.close()
-#        print('Plotting masked sensitivity field as a check failed.')
-## Onto Error fields
-#
-#    maxweighted = np.nanmax(np.absolute(error_masked[0,4,:,:]))
-##
-##    try:
-##        # Now plot error field
-##        fig = plt.figure(figsize=(10,10))
-##        # Build projection/map
-##        ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal())
-##        state_borders = cfeat.NaturalEarthFeature(category='cultural',
-##                       name='admin_1_states_provinces_lakes', scale='50m', facecolor='None')
-##        ax.add_feature(state_borders, linestyle="-", edgecolor='dimgray')
-##        ax.add_feature(cfeat.BORDERS, edgecolor='dimgray')
-##        ax.add_feature(cfeat.COASTLINE, edgecolor='dimgray')
-##        ax.set_extent([-120., -75., 20., 50.])
-##        errormax = np.ma.amax(np.absolute(diff[0,4,:,:]))
-##        print("Absolute Max for Member 5: ", errormax)
-##        cflevs = np.linspace(0.0, maxweighted, 100.)
-##        #print(cflevs)
-##        #print(np.shape(error_masked))
-##        errorfield = ax.contourf(lons, lats, np.absolute(diff[0,4,:,:]), cflevs,
-##                                 cmap=cmocean.cm.amp, transform=ccrs.PlateCarree())
-##        fig.colorbar(errorfield, fraction=0.046, pad=0.04, ax=ax, orientation='horizontal',
-##                         label='Error')
-##        plt.title('Error Field for Member 5 of ' + varkeys[0].replace("_"," "))
-##        plt.savefig('unweighted_errorfield.png')
-##        plt.close()
-##    except:
-##        plt.close()
-##        raise
-##        print('Plotting masked error field as a check failed.')
-#
-#    try:
-#        # Now plot error field
-#        fig = plt.figure(figsize=(10,10))
-#        # Build projection/map
-#        ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal())
-#        state_borders = cfeat.NaturalEarthFeature(category='cultural',
-#                       name='admin_1_states_provinces_lakes', scale='50m', facecolor='None')
-#        ax.add_feature(state_borders, linestyle="-", edgecolor='dimgray')
-#        ax.add_feature(cfeat.BORDERS, edgecolor='dimgray')
-#        ax.add_feature(cfeat.COASTLINE, edgecolor='dimgray')
-#        ax.set_extent([-120., -75., 20., 50.])
-#        print("Absolute Max Weighted for Member 5: ", maxweighted)
-#        cflevs = np.linspace(0.0, maxweighted, 100.)
-#        #print(cflevs)
-#        #print(np.shape(error_masked))
-#        errorfield = ax.contourf(lons, lats, error_masked[0,4,:,:], cflevs, cmap=cmocean.cm.amp,
-#                                     transform=ccrs.PlateCarree())
-#        #errorfield.cmap.set_under(color=u'navy')
-#        fig.colorbar(errorfield, fraction=0.046, pad=0.04, ax=ax, orientation='horizontal',
-#                         label='Error')
-#        if method == 2:
-#            plt.title('Masked and Weighted Error Field for Member 5 of ' + varkeys[0].replace("_"," "))
-#            plt.savefig('proj_errorfield.png')
-#        else:
-#            plt.title('Masked Error Field for Member 5 of ' + varkeys[0].replace("_"," "))
-#            plt.savefig('rms_errorfield.png')
-#        plt.close()
-#    except:
-#        plt.close()
-#        raise
-#        print('Plotting masked error field as a check failed.')
+    # # Get lat/lon data for plot extent
+    # wrfrefpath = '/lustre/scratch/aucolema/2016052600/wrfoutREF'
+    # wrfref = Dataset(wrfrefpath)
+    # clon, clat = wrfref.CEN_LON, wrfref.CEN_LAT
+    # tlat1, tlat2 = wrfref.TRUELAT1, wrfref.TRUELAT2
+    #
+    # try:
+    #    # Plot
+    #    fig = plt.figure(figsize=(10, 10))
+    #
+    #    # Build projection/map
+    #    ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal(central_longitude=clon,
+    #                                                                           central_latitude=clat,
+    #                                                                           standard_parallels=(tlat1, tlat2)))
+    #    state_borders = cfeat.NaturalEarthFeature(category='cultural',
+    #                   name='admin_1_states_provinces_lakes', scale='50m', facecolor='None')
+    #    ax.add_feature(state_borders, linestyle="-", edgecolor='dimgray')
+    #    ax.add_feature(cfeat.BORDERS, edgecolor='dimgray')
+    #    ax.add_feature(cfeat.COASTLINE, edgecolor='dimgray')
+    #    ax.set_extent([-120., -75., 20., 50.])
+    #    cflevs = np.linspace(-1*maxval[0], maxval[0], 101.)
+    #    #print(cflevs)
+    #    sensfield_threshold = ax.contourf(lons, lats, sensmat_masked[0,:,:],
+    #                                      vmin=cflevs[0], vmax=cflevs[-1], levels=cflevs, cmap='bwr',
+    #                                      transform=ccrs.PlateCarree())
+    #    fig.colorbar(sensfield_threshold, fraction=0.046, pad=0.04, ax=ax, orientation='horizontal',
+    #                     label='Sensitivity Magnitude')
+    #    plt.title('Sensitivity Field of ' + varkeys[0].replace("_"," "))
+    #    plt.savefig('sensfield.png')
+    #    plt.close()
+    # except:
+    #    plt.close()
+    #    print('Plotting sensitivity field as a check failed.')
+    #
+    # try:
+    #    # Plot
+    #    fig = plt.figure(figsize=(10, 10))
+    #
+    #    # Build projection/map
+    #    ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal(central_longitude=clon,
+    #                                                                           central_latitude=clat,
+    #                                                                           standard_parallels=(tlat1, tlat2)))
+    #    state_borders = cfeat.NaturalEarthFeature(category='cultural',
+    #                   name='admin_1_states_provinces_lakes', scale='50m', facecolor='None')
+    #    ax.add_feature(state_borders, linestyle="-", edgecolor='dimgray')
+    #    ax.add_feature(cfeat.BORDERS, edgecolor='dimgray')
+    #    ax.add_feature(cfeat.COASTLINE, edgecolor='dimgray')
+    #    ax.set_extent([-120., -75., 20., 50.])
+    #    cflevs = np.linspace(-1*maxval[0], maxval[0], 101.)
+    #    #print(cflevs)
+    #    sensfield_threshold = ax.contourf(lons, lats, sens_masked[0,:,:],
+    #                                      vmin=cflevs[0], vmax=cflevs[-1], levels=cflevs, cmap='bwr',
+    #                                      transform=ccrs.PlateCarree())
+    #    fig.colorbar(sensfield_threshold, fraction=0.046, pad=0.04, ax=ax, orientation='horizontal',
+    #                     label='Sensitivity Magnitude')
+    #    plt.title('Masked Sensitivity Field of ' + varkeys[0].replace("_"," "))
+    #    plt.savefig('sensfield_threshold.png')
+    #    plt.close()
+    # except:
+    #    plt.close()
+    #    print('Plotting masked sensitivity field as a check failed.')
+    # # Onto Error fields
+    #
+    # maxweighted = np.nanmax(np.absolute(error_masked[0,4,:,:]))
+    #
+    # try:
+    #    # Now plot error field
+    #    fig = plt.figure(figsize=(10,10))
+    #    # Build projection/map
+    #    ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal())
+    #    state_borders = cfeat.NaturalEarthFeature(category='cultural',
+    #                   name='admin_1_states_provinces_lakes', scale='50m', facecolor='None')
+    #    ax.add_feature(state_borders, linestyle="-", edgecolor='dimgray')
+    #    ax.add_feature(cfeat.BORDERS, edgecolor='dimgray')
+    #    ax.add_feature(cfeat.COASTLINE, edgecolor='dimgray')
+    #    ax.set_extent([-120., -75., 20., 50.])
+    #    errormax = np.ma.amax(np.absolute(diff[0,4,:,:]))
+    #    print("Absolute Max for Member 5: ", errormax)
+    #    cflevs = np.linspace(-1*maxweighted, maxweighted, 101)
+    #    #print(cflevs)
+    #    #print(np.shape(error_masked))
+    #    errorfield = ax.contourf(lons, lats, diff[0,4,:,:], cflevs,
+    #                             cmap=cmocean.cm.curl, transform=ccrs.PlateCarree())
+    #    fig.colorbar(errorfield, fraction=0.046, pad=0.04, ax=ax, orientation='horizontal',
+    #                     label='Error')
+    #    plt.title('Error Field for Member 5 of ' + varkeys[0].replace("_"," "))
+    #    plt.savefig('unweighted_errorfield.png')
+    #    plt.close()
+    # except:
+    #    plt.close()
+    #    raise
+    #    print('Plotting masked error field as a check failed.')
+    #
+    # try:
+    #    # Now plot error field
+    #    fig = plt.figure(figsize=(10,10))
+    #    # Build projection/map
+    #    ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal())
+    #    state_borders = cfeat.NaturalEarthFeature(category='cultural',
+    #                   name='admin_1_states_provinces_lakes', scale='50m', facecolor='None')
+    #    ax.add_feature(state_borders, linestyle="-", edgecolor='dimgray')
+    #    ax.add_feature(cfeat.BORDERS, edgecolor='dimgray')
+    #    ax.add_feature(cfeat.COASTLINE, edgecolor='dimgray')
+    #    ax.set_extent([-120., -75., 20., 50.])
+    #    print("Absolute Max Weighted for Member 5: ", maxweighted)
+    #    cflevs = np.linspace(-1*maxweighted, maxweighted, 101)
+    #    #print(cflevs)
+    #    #print(np.shape(error_masked))
+    #    errorfield = ax.contourf(lons, lats, error_masked[0,4,:,:], cflevs,
+    #                                 cmap=cmocean.cm.curl,
+    #                                 transform=ccrs.PlateCarree())
+    #    #errorfield.cmap.set_under(color=u'navy')
+    #    fig.colorbar(errorfield, fraction=0.046, pad=0.04, ax=ax, orientation='horizontal',
+    #                     label='Error')
+    #    if method == 2:
+    #        plt.title('Masked and Weighted Error Field for Member 5 of ' + varkeys[0].replace("_"," "))
+    #        plt.savefig('proj_errorfield.png')
+    #    else:
+    #        plt.title('Masked Error Field for Member 5 of ' + varkeys[0].replace("_"," "))
+    #        plt.savefig('rms_errorfield.png')
+    #    plt.close()
+    # except:
+    #    plt.close()
+    #    raise
+    #    print('Plotting masked error field as a check failed.')
 
     # Sum total error and choose members with least error for subset
+    summed_over_sensvars = np.zeros((fullensnum, len(lats[:,0]),
+                                        len(lons[0,:])))
     summed_error = np.zeros((fullensnum))
     for i in range(fullensnum):
-        summed_error[i] = np.absolute(np.nansum(error_masked[:,i,:,:]))/np.ma.size(error_masked[:,i,:,:])
+        # Sum over sensitivity var axis first to produce one error grid per member
+        summed_over_sensvars[i] = np.nansum(error_masked[:,i], axis=0)
+        # Then sum over entire grid to produce one value per member
+        summed_error[i] = np.absolute(np.nansum(summed_over_sensvars[i]))/np.ma.size(error_masked[:,i,:,:])
     print("Min/Max Summed Error:", np.min(summed_error), np.max(summed_error))
     print("Npts for member {}".format(1), np.ma.size(error_masked[:,0,:,:]))
     print("Npts for member {}".format(i+1), np.ma.size(error_masked[:,i,:,:]))

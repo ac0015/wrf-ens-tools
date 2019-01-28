@@ -8,9 +8,9 @@ ensnum = 10
 sensvar, sensind = "500_hPa_GPH", 1
 memvalvar, analysisvar = "GPH_500", "500_hPa_GPH"
 # Filepaths for storing dummy data
-senspath = 'test/sens_rand.nc'
-analysispath = 'test/fake_RAP_interp_analysis.nc'
-memvalspath = 'test/mem_vals.nc'
+senspath = 'sens_rand.nc'
+analysispath = 'fake_RAP_interp_analysis.nc'
+memvalspath = 'mem_vals.nc'
 
 # Define arbitrary sensitivity field
 sens_field = np.random.rand(1, ydim, xdim)
@@ -84,17 +84,7 @@ def test_ensSubset():
                                                       analysis=analysispath, newensnum=3,
                                                       memvalsfile=memvalspath, fullensnum=ensnum,
                                                       sensvars=[sensvar], method=2, sens_thresh=0.0)
-    print("Subset members in order of increasing error: {} \nSensitivity variables used: {}".format(submems,
-            sensstrings))
     # We know that member 5 has the lowest errors over the whole domain,
     #  so it should also have the lowest sensitivity-weighted errors.
     #  Make sure that's the case here.
-    assert(submems[0] == 5)
-
-    # Attempt with RMS technique (method=3) and show the same member is
-    #  produced even with a nonzero sensitivity threshold.
-    submems, sensstrings = esens_subsetting.ensSubset(wrfsensfile=senspath,
-                                                      analysis=analysispath, newensnum=3,
-                                                      memvalsfile=memvalspath, fullensnum=ensnum,
-                                                      sensvars=[sensvar], method=3, sens_thresh=0.8)
     assert(submems[0] == 5)

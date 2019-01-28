@@ -275,7 +275,7 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     return pperf, wrflon, wrflat
 
 def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2,
-                            wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREFd2'):
+                            wrfrefpath='/lustre/scratch/aucolema/2016052600/wrfoutREFd2'):
     """
     Implementation of practically perfect probability
     calculations adapted from Robert Hepper's code.
