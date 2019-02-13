@@ -13,6 +13,8 @@ import wrf
 import numpy as np
 from netCDF4 import Dataset, date2num
 from datetime import timedelta
+import xarray as xr
+from datetime import datetime, timedelta
 from subprocess import call
 from scipy import ndimage
 import pyproj
@@ -20,6 +22,7 @@ import scipy as sp
 import os
 import csv
 import sys
+from wrf_ens_tools.post import post_process as pp
 
 package_dir =  os.path.dirname(os.path.abspath(__file__))
 
@@ -194,12 +197,12 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
 
     #Make lists of report lats and lons
     try:
-    	with open(rptfile) as csvf:
+        with open(rptfile) as csvf:
             r = csv.reader(csvf)
             mylist = list(r)
     except IOError:
-    	print('Report CSV file could not be opened.')
-    	sys.exit()
+        print('Report CSV file could not be opened.')
+        sys.exit()
 
     length = len(mylist)-3
     time = [0]*length
@@ -222,7 +225,7 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
 
     #If there aren't any reports, practically perfect is zero across grid
     if length == 0:
-    	pperf = np.zeros_like(wrflon)
+        pperf = np.zeros_like(wrflon)
 
     #Otherwise, let's grid the reports
     else:
@@ -262,7 +265,7 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
             for xi, yi in zip(xind, yind):
                 grid[xi, yi] = 1
 
-        	# Gaussian smoother over our grid to create practically perfect probs
+            # Gaussian smoother over our grid to create practically perfect probs
             pperf = ndimage.gaussian_filter(grid, sigma=sigma, order=0)
 
         except:
@@ -353,7 +356,6 @@ def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2,
     wrflon = dat.variables['XLONG'][0]
     wrflat = dat.variables['XLAT'][0]
     dat.close()
-    mod = 24
 
     # If there aren't any reports, practically perfect is zero across grid
     if length == 0:
@@ -444,7 +446,6 @@ def dist_mask(xind, yind, xpts, ypts, r):
 # Begin verification metrics
 #############################################################
 
-
 def FSS(probpath, obspath, fhr, var='updraft_helicity',
         thresh=25., rboxpath=None):
     """
@@ -526,6 +527,9 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
     if var == 'updraft_helicity':
         obs = obsdat.variables['practically_perfect'][:]
         sig = obsdat.variables['sigma'][:]
+    elif var == 'reflectivity':
+        ##### UNDER CONSTRUCTION ########
+        pass
     else:
         raise ValueError('Support for {} not yet built in.'.format(var))
 
@@ -960,7 +964,7 @@ def scipyReliabilityRbox(probpath, runinitdate, fhr,  rboxpath,
             else:
                 # Subset of smoothed ob grid that exceeds 0 constitutes a hit
                 where = np.where(nbrhd_grid[fcstinds] > 0)
-                hits = len(np.where(nbrhd_grid[fcstinds] > 0)[0])
+                hits = len(where[0])
                 tot = len(list(zip(fcstinds[0].ravel(),
                                             fcstinds[1].ravel())))
                 # Define ob hit rate
@@ -993,7 +997,6 @@ def rmse(predictions, targets, axis=None, nan=False):
         rmse_data = np.sqrt(np.nanmean(((predictions - targets) ** 2), axis=axis))
     return rmse_data
 
-
 def mse(predictions, targets, axis=None, nan=False):
     """
     Mean Square Error (MSE)
@@ -1017,3 +1020,124 @@ def mse(predictions, targets, axis=None, nan=False):
     else:
         mse_data = np.nanmean(((predictions - targets) ** 2), axis=axis)
     return mse_data
+
+######### GridRad Reflectivity Verification Metrics ##################
+def calc_refl_max_rbox(gridradfiles, rboxpath, zlev):
+    """
+    Calculates the reflectivity maximum value in a given response
+    box. This function is meant to be used to verify ESA-based
+    subsets that use reflectivity maxima as their response function.
+
+    Inputs
+    ------
+    gridradfiles ---------- list of absolute paths to GridRad file
+    rboxpath -------------- absolute path to sensitivity input file for
+                            sensitivity calculations that contains the
+                            response box bounds
+    zlev ------------------ altitude index to slice reflectivity from
+
+    Outputs
+    -------
+    returns the response box reflectivity maximum along with its
+    lat / lon location as a tuple like so: (refl_max, lat, lon)
+    """
+    # Read response box bounds
+    esensin = np.genfromtxt(rboxpath)
+    rbox_bounds = esensin[4:8]
+
+    dat = pp.merge_refl_data(gridradfiles)
+    lons = dat["Longitude"]
+    lats = dat["Latitude"]
+
+    # Build rbox mask
+    lonmask = (lons >= rbox_bounds[0]) & (lons < rbox_bounds[1])
+    latmask = (lats >= rbox_bounds[2]) & (lats < rbox_bounds[3])
+    mask = latmask & lonmask
+
+    # Find reflectivity maximum and its location
+    first_refl = dat.values[0,zlev]
+    refl_max = np.nanmax(first_refl[mask])
+    for i in range(len(dat.values)):
+        refl_tmp = np.nanmax(dat.values[i,zlev][mask])
+        if refl_tmp > refl_max:
+            refl_max = refl_tmp
+    reflmaxind = np.where(dat.values == refl_max)
+    meshlats, meshlons = np.meshgrid(lats, lons)
+    reflmax_lon = meshlons[reflmaxind[2:]][0]
+    reflmax_lat = meshlats[reflmaxind[2:]][0]
+
+    return refl_max, reflmax_lat, reflmax_lon
+
+def calc_refl_cov_rbox(gridradfiles, rboxpath, zlev, refl_thresh):
+    """
+    Calculates the reflectivity coverage (in number of grid points)
+    over a given response box. This function is meant to be used to
+    verify ESA-based subsets that use reflectivity coverage as their
+    response function.
+
+    Inputs
+    ------
+    gridradfiles ---------- absolute path to interpolated GridRad file
+    rboxpath -------------- absolute path to sensitivity input file for
+                            sensitivity calculations that contains the
+                            response box bounds
+    zlev ------------------ zero-based integer describing which altitude
+                            level to pull reflectivity data from
+    refl_thresh ----------- float describing reflectivity threshold to
+                            that
+
+    Outputs
+    -------
+    returns the response box reflectivity coverage as an integer
+    as well as the number of grid points in the response box
+    """
+    # Read response box bounds
+    esensin = np.genfromtxt(rboxpath)
+    rbox_bounds = esensin[4:8]
+
+    # Read data
+    dats = [xr.open_dataset(file) for file in gridradfiles]
+    inds = dats[0]["index"]
+    time = dats[0].Analysis_time
+    lats = dats[0]["Latitude"]
+    lons = dats[0]["Longitude"]-360.
+    z = dats[0]["Altitude"]
+    refl = dats[0]["Reflectivity"].values
+    refl_vals = np.zeros(len(z.values)*len(lats.values)*len(lons.values))*np.NaN
+    refl_vals[inds.values] = refl
+    refl_reshape = refl_vals.reshape((len(z.values), len(lats.values),
+                                        len(lons.values)))
+    dat = xr.DataArray(refl_reshape, coords=[z, lats, lons])
+    dat.name = "Reflectivity"
+    for i in range(1,len(dats)):
+        # Pull reflectivity information
+        ds = dats[i]
+        inds = ds["index"]
+        time = ds.Analysis_time
+        lats = ds["Latitude"]
+        lons = ds["Longitude"]-360.
+        z = ds["Altitude"]
+        refl = ds["Reflectivity"].values
+        refl_vals = np.zeros(len(z.values)*len(lats.values)*len(lons.values))*np.NaN
+        refl_vals[inds.values] = refl
+        refl_reshape = refl_vals.reshape((len(z.values), len(lats.values),
+                                            len(lons.values)))
+        da = xr.DataArray(refl_reshape, coords=[z, lats, lons])
+        da.attrs['Analysis_Endtime'] = time
+        da.name = "Reflectivity"
+        dat = xr.concat([dat, da], dim='Hours')
+
+    # Build rbox mask
+    lonmask = (lons >= rbox_bounds[0]) & (lons < rbox_bounds[1])
+    latmask = (lats >= rbox_bounds[2]) & (lats < rbox_bounds[3])
+    mask = latmask & lonmask
+
+    # Capture grid points where reflectivity exceeds threshold
+    refl_cov = 0
+    for i in range(len(dat.values)):
+        refl_rbox = dat.values[i,zlev][mask]
+        refl_exceeds = refl_rbox[refl_rbox > refl_thresh]
+        refl_cov += len(refl_exceeds)
+    npts_rbox = len(refl_rbox)
+
+    return refl_cov, npts_rbox

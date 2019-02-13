@@ -21,26 +21,32 @@ print(yr, mo, day, hr)
 init = datetime(yr, mo, day, hr)
 sens_times = [6]
 subset_sizes = [1, 2, 4, 6, 10, 15, 20, 25, 30, 35, 40]
-subset_methods = ['weight', 'percent']
-# Each sig level and then all sens vars
-sensvars = [['300_hPa_GPH', '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind'],
-            ['500_hPa_GPH', '500_hPa_T', '500_hPa_U-Wind', '500_hPa_V-Wind'],
-            ['700_hPa_GPH', '700_hPa_T', '700_hPa_U-Wind', '700_hPa_V-Wind'],
-            ['850_hPa_GPH', '850_hPa_T', '850_hPa_U-Wind', '850_hPa_V-Wind'],
-            ['925_hPa_T', '925_hPa_U-Wind', '925_hPa_V-Wind'],
-            ['SLP', '2m_Temp', '2m_Dewpt', '10m_U-Wind', '10m_V-Wind'],
+subset_methods = ['weight']
+# New testing configuration
+sensvars = [['300_hPa_GPH', '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind',
+                '500_hPa_GPH', '500_hPa_T', '500_hPa_U-Wind', '500_hPa_V-Wind',
+                '700_hPa_T'],   # HWT Config
+            ['300_hPa_GPH', '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind'],
+                '500_hPa_GPH', '500_hPa_T', '500_hPa_U-Wind', '500_hPa_V-Wind',
+                '700_hPa_GPH', '700_hPa_T',
+                '700_hPa_U-Wind', '700_hPa_V-Wind'], # Upper-level vars
+            ['850_hPa_GPH', '850_hPa_T', '850_hPa_U-Wind', '850_hPa_V-Wind',
+                '925_hPa_T', '925_hPa_U-Wind', '925_hPa_V-Wind',
+                '2m_Temp', '2m_Dewpt', '10m_U-Wind', '10m_V-Wind'], # Low-level vars
+            ['SLP'], # SLP
             ['300_hPa_GPH', '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind',
-             '500_hPa_GPH', '500_hPa_T', '500_hPa_U-Wind', '500_hPa_V-Wind',
-             '700_hPa_GPH', '700_hPa_T', '700_hPa_U-Wind', '700_hPa_V-Wind',
-             '850_hPa_GPH', '850_hPa_T', '850_hPa_U-Wind', '850_hPa_V-Wind',
-             '925_hPa_T', '925_hPa_U-Wind', '925_hPa_V-Wind',
-             'SLP', '2m_Temp', '2m_Dewpt', '10m_U-Wind', '10m_V-Wind']]
+                 '500_hPa_GPH', '500_hPa_T', '500_hPa_U-Wind', '500_hPa_V-Wind',
+                 '700_hPa_GPH', '700_hPa_T', '700_hPa_U-Wind', '700_hPa_V-Wind',
+                 '850_hPa_GPH', '850_hPa_T', '850_hPa_U-Wind', '850_hPa_V-Wind',
+                 '925_hPa_T', '925_hPa_U-Wind', '925_hPa_V-Wind',
+                 'SLP', '2m_Temp', '2m_Dewpt', '10m_U-Wind', '10m_V-Wind']] # All
+
 percents = [0., 10., 20., 30., 40., 50., 60., 70., 80., 90.]
 uh_thresh = [25., 40., 100.]
 nbrs = [30.0]
 pperfnbrs = [80.0]
-rfunctions = ["UH Coverage"]
-analysis = ["WRF", "RAP"]
+rfunctions = ["UH Coverage", "UH Maximum"]
+analysis = ["WRF"]
 analysis_fhr = 0
 ########################################################################
 
@@ -61,7 +67,7 @@ for rfunc in rfunctions:
                      rfuncstr=rfunc, rthresh=thresh,
                      ensbasepath=direc)
             print('Using sens obj:', str(S))
-            #S.runAll()
+            S.runAll()
             # Calculate Full Ensemble probs and Practically Perfect probs
             rtime = S.getRTime()
             rdate = init + timedelta(hours=rtime)
@@ -119,7 +125,7 @@ for rfunc in rfunctions:
                         sub.interpRAP()
             del sub
             if sixhour:
-                statspath = direc + 'brians_subsetting_way_sixhr_stats_sig1_nbr30.nc'
+                statspath = direc + 'sixhr_stats_sig1_nbr30.nc'
             else:
                 statspath = direc + 'onehr_stats_sig1_nbr30.nc'
             # Get stats for different subset combos

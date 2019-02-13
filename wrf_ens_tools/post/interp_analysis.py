@@ -1,12 +1,16 @@
 import numpy as np
 from netCDF4 import Dataset
+from datetime import datetime, timedelta
 from cartopy import crs as ccrs
 from cartopy import feature as cfeat
 from matplotlib import pyplot as plt
+from matplotlib import patches
+import xarray as xr
 from wrf_ens_tools.calc import coordinateSystems as cs
 from scipy import interpolate
 from siphon import ncss
 import subprocess
+import os
 
 ###########################################################
 # Austin Coleman
@@ -228,4 +232,172 @@ def plotRAPinterp(rapfile, var="500_hPa_GPH"):
     ax.set_title(var.replace("_"," ")+" RAP Analysis")
     plt.savefig("RAP_Analysis_"+var)
     plt.close()
+    return
+
+def interp_gridrad_to_binary(gridrad_interpfile, threshold):
+    """
+    Converts an interpolated GridRad reflectivity grid to a binary grid
+    describing threshold exceedances in hits and misses. NOTE: If a file
+    with multiple timestamps is found, this function will calculate the
+    binary field accumulated over all time steps found in the dataset.
+
+    Inputs
+    ------
+    gridrad_interpfile -------- absolute path to GridRad file which has been
+                                interpolated to WRF grid and may contain
+                                multiple valid timestamps.
+    threshold ----------------- reflectivity threshold as float to use
+                                to separate hits from misses. 40 dBZ is
+                                a common threshold.
+    """
+    ds = xr.open_dataset(gridrad_interpfile)
+
+def horiz_interp_and_store_gridrad(gridrad_file, interpto_file, out_file,
+                                    zlev):
+    """
+    Horizontally interpolates reflectivity from a GridRad file
+    to a WRF grid of choice.
+
+    Inputs
+    ------
+    gridrad_file --------- absolute path to GridRad file to be interpolated
+    interpto_file -------- absolute path to WRF file that contains the grid
+                            you wish to interpolate the GridRad data to
+    out_file ------------- absolute path to store interpolated GridRad data
+    zlev ----------------- zero-based vertical level to interpolate
+
+    Outputs
+    -------
+    returns NULL but stores interpolated GridRad data to out_file
+    """
+    # Ingest GridRad data
+    og_gridrad = xr.open_dataset(gridrad_file)
+    # Mesh x and y information
+    gr_lon, gr_lat = np.meshgrid(og_gridrad['Longitude'].values-360.,
+                                og_gridrad['Latitude'].values)
+    # Pull reflectivity information
+    og_refl = og_gridrad['Reflectivity'].values
+    og_refl_vals = np.zeros(len(og_gridrad["Altitude"].values)* \
+                                len(og_gridrad["Latitude"].values)* \
+                                len(og_gridrad["Longitude"].values)) * np.NaN
+    og_refl_vals[og_gridrad['index'].values[:]] = og_refl
+    og_refl_reshape = og_refl_vals.reshape((len(og_gridrad["Altitude"].values),
+                                    len(og_gridrad["Latitude"].values),
+                                    len(og_gridrad["Longitude"].values)))
+    og_refl = og_refl_reshape[zlev,:,:]
+    print("MAX ORIGINAL REFL", np.nanmax(og_refl))
+    # Pull grid from WRF file
+    tointerp = Dataset(interpto_file)
+    lons = tointerp.variables['XLONG'][0]
+    lats = tointerp.variables['XLAT'][0]
+
+    # Interpolate
+    print(np.shape(gr_lat), np.shape(og_refl))
+    interp_refl = bilinear_interp(gr_lon, gr_lat,
+                                    lons, lats, og_refl)
+    print("MAX INTERPOLATED REFL", np.nanmax(interp_refl))
+    # Any degradation of reflectivity values more than 5 dBZ probably isn't
+    #  acceptable. TO-DO: Make this check less arbitrary - how much structural
+    #  integrity are you willing to lose with this interpolation?
+    # print(np.absolute(np.nanmax(interp_refl) - np.nanmax(og_refl)))
+    # Store to new dataset
+    if os.path.exists(out_file):
+        mode = "a"
+    else:
+        mode = "w"
+    nc_out = Dataset(out_file, mode)
+    if mode == "w":
+        nc_out.STARTDATE = og_gridrad.datehour.values
+        nc_out.createDimension('Time', size=None)
+        nc_out.createDimension('south_north', size=len(lats[:,0]))
+        nc_out.createDimension('west_east', size=len(lons[0,:]))
+        xlat = nc_out.createVariable('XLAT', np.float64,
+                dimensions=('Time', 'south_north', 'west_east'))
+        xlat[0] = lats
+        xlong = nc_out.createVariable('XLONG', np.float64,
+                dimensions=('Time', 'south_north', 'west_east'))
+        xlong[0] = lons
+        reflout = nc_out.createVariable("GridRad_Refl", np.float64,
+                dimensions=('Time', 'south_north', 'west_east'))
+        reflout[0] = interp_refl
+        zlevel = nc_out.createVariable('zlev', np.int, dimensions=('Time'))
+        zlevel[:] = zlev
+    else:
+        refl = nc_out.variables["GridRad_Refl"]
+        n = len(refl)
+        refl[n] = interp_refl
+        nc_out.variables['XLONG'][n] = lons
+        nc_out.variables['XLAT'][n] = lats
+        nc_out.variables['zlev'][n] = zlev
+    nc_out.close()
+    return
+
+def plot_interp_refl_rbox(gridrad_interpfile, rboxpath):
+    """
+    Plot interpolated GridRad data and within and around
+    response box.
+
+    Inputs
+    ------
+    gridrad_interpfile ---- absolute path to interpolated GridRad
+                            data
+    rboxpath -------------- absolute path to input file for sensitivity
+                            code that contains response box bounds
+
+    Outputs
+    -------
+    returns NULL but plots and saves image of interpolated data
+    over response box
+    """
+    # Read response box bounds
+    esensin = np.genfromtxt(rboxpath)
+    rbox_bounds = esensin[4:8]
+
+    # Read interpolated radar data
+    dat = Dataset(gridrad_interpfile)
+    analysistime = dat.STARTDATE
+    refl = dat.variables["GridRad_Refl"][:]
+    lons = dat.variables["XLONG"][0]
+    lats = dat.variables["XLAT"][0]
+    zlev = dat.variables["zlev"][0]
+
+    ########### Plot interpolated radar data over response box ##################
+    # Build response box
+    llon, ulon, llat, ulat = rbox_bounds
+    width = ulon - llon
+    height = ulat - llat
+
+    for i in range(len(refl)):
+        time = str(datetime.strptime(str(analysistime), "%Y%m%d%H") + \
+                timedelta(hours=i)).replace(" ", "_")
+        # Initialize plot
+        fig = plt.figure(figsize=(10, 10))
+        # Build projection/map
+        ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal())
+        state_borders = cfeat.NaturalEarthFeature(category='cultural',
+                   name='admin_1_states_provinces_lakes', scale='50m', facecolor='None')
+        ax.add_feature(state_borders, linestyle="-", edgecolor='dimgray')
+        ax.add_feature(cfeat.BORDERS, edgecolor='dimgray')
+        ax.add_feature(cfeat.COASTLINE, edgecolor='dimgray')
+        # Add rbox and zoom extent to rbox/nearest surrounding area
+        rbox = patches.Rectangle((llon, llat), width, height, transform=ccrs.PlateCarree(),
+                                 fill=False, color='green', linewidth=2., zorder=3.)
+        ax.add_patch(rbox)
+        ax.set_extent([llon-10.0, ulon+10.0, llat-5.0, ulat+5.0])
+
+        # Plot radar data
+        print("Max reflectivity for {}".format(analysistime),
+                np.nanmax(refl[i]))
+        try:
+            reflectivity = ax.contourf(lons, lats, refl[i],
+                        transform=ccrs.PlateCarree(), cmap="pyart_HomeyerRainbow")
+            plt.colorbar(reflectivity, label="Reflectivity",
+                        fraction=0.0289, pad=0.0)
+            plt.title("Interpolated GridRad Vertical-Level-{} Reflectivity Data valid {}".format(zlev+1,
+                        str(time).replace(' ','_')))
+        except:
+            print("No values to contour...")
+        plt.savefig('interp_gridrad_zlev{}_valid{}.png'.format(zlev+1,
+                    str(time).replace(' ','_')))
+
     return

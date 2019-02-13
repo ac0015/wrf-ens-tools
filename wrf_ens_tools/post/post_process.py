@@ -13,10 +13,16 @@ suite.
 """
 
 import numpy as np
+import xarray as xr
 import wrf
 from netCDF4 import Dataset
-from datetime import timedelta
-from ..calc import calc_prac_perf_spc_grid, nearest_neighbor_spc
+from datetime import timedelta, datetime
+from wrf_ens_tools.calc import calc
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import cartopy.crs as ccrs
+import cartopy.feature as cfeat
+import pyart
 import os
 
 dflt_var = ['td2', 'T2']
@@ -290,13 +296,10 @@ def process_wrf(inpaths, outpath, reduced=True,
             k = 0
             for varname in var:
                 outvarnames = [outvar_names[k]]
-                #print(outvarnames)
                 nvars = len(np.shape(outvarnames))
-                #print(varname, dat)
                 invar = wrf.getvar(dat, varname, cache=ref_cache)
                 for n in range(nvars):
                     outvarname = outvarnames[n]
-                    #print(outvarname)
                     # Create variable if not created yet
                     if outvarname not in outfile.variables.keys():
                         dimensions = [mems.name]
@@ -402,7 +405,6 @@ def postTTUWRFanalysis(inpath, outpath,
     # Pull analysis variables
     og_analysis = Dataset(inpath)
     anlvars = og_analysis.variables['T'][0]
-    print(np.shape(anlvars))
     gph300 = anlvars[0,:,:]
     gph500 = anlvars[1,:,:]
     gph700 = anlvars[2,:,:]
@@ -572,7 +574,7 @@ def storePracPerfSPCGrid(modelinit, fcsthrs, outpath,
     netcdf_out = Dataset(outpath, "w", format="NETCDF4")
     # Calculate pperf to pull lat/lon data
     sigma = nbrhd / dx
-    pperf, lon, lat = calc_prac_perf_spc_grid(modelinit, sixhour,
+    pperf, lon, lat = calc.calc_prac_perf_spc_grid(modelinit, sixhour,
                                      fcsthrs[0], sigma=sigma,
                                      wrfrefpath=wrfrefpath)
     # Set up netCDF
@@ -587,7 +589,7 @@ def storePracPerfSPCGrid(modelinit, fcsthrs, outpath,
     sig[:] = sigma
     # Populate outfile with pperf
     for t in range(len(fcsthrs)):
-        pperf, lon, lat = calc_prac_perf_spc_grid(modelinit, sixhour, fcsthrs[t], sigma=sigma)
+        pperf, lon, lat = calc.calc_prac_perf_spc_grid(modelinit, sixhour, fcsthrs[t], sigma=sigma)
         pperfout[t] = pperf[:]*100.
         times[t] = fcsthrs[t]
     netcdf_out.close()
@@ -623,7 +625,7 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, sixhour=True,
     # Create outfile
     netcdf_out = Dataset(outpath, "w", format="NETCDF4")
     # Calculate pperf to pull lat/lon data
-    grid = nearest_neighbor_spc(modelinit, sixhour, fcsthrs[0], nbrhd=0.,
+    grid = calc.nearest_neighbor_spc(modelinit, sixhour, fcsthrs[0], nbrhd=0.,
                                 wrfrefpath=wrfrefpath)
     # Set up netCDF
     netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
@@ -635,7 +637,7 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, sixhour=True,
                                             'south_north', 'west_east'))
     # Populate outfile with pperf
     for t in range(len(fcsthrs)):
-        grid = nearest_neighbor_spc(modelinit, sixhour, fcsthrs[t], nbrhd=0.,
+        grid = calc.nearest_neighbor_spc(modelinit, sixhour, fcsthrs[t], nbrhd=0.,
                                     wrfrefpath=wrfrefpath)
         nearest_out[t] = grid[:]
         times[t] = fcsthrs[t]
@@ -646,3 +648,120 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, sixhour=True,
 # with procalcSUBSET.f
 def calcEnsProbs(enspath, members, wrfref):
     pass
+
+################### GridRad Reflectivity post-processing #######################
+def merge_refl_data(gridradfiles):
+    """
+    Merges given list of GridRad reflectivity data over the time dimension
+    and returns a concatenated xarray DataArray object.
+    """
+    # Read data
+    dats = [xr.open_dataset(file) for file in gridradfiles]
+    inds = dats[0]["index"]
+    time = dats[0].Analysis_time
+    lats = dats[0]["Latitude"]
+    lons = dats[0]["Longitude"]-360.
+    z = dats[0]["Altitude"]
+    refl = dats[0]["Reflectivity"].values
+    # Reshape reflectivity data
+    refl_vals = np.zeros(len(z.values)*len(lats.values)*len(lons.values))*np.NaN
+    refl_vals[inds.values] = refl
+    refl_reshape = refl_vals.reshape((len(z.values), len(lats.values),
+                                        len(lons.values)))
+    # Create reflectivity xarray DataArray obj
+    dat = xr.DataArray(refl_reshape, coords=[z, lats, lons])
+    dat.name = "Reflectivity"
+    # For each time stamp in the dataset, pull reflectivity and concatenate
+    #  onto DataArray object
+    for i in range(1,len(dats)):
+        # Pull reflectivity information and post-process
+        ds = dats[i]
+        inds = ds["index"]
+        time = ds.Analysis_time
+        lats = ds["Latitude"]
+        lons = ds["Longitude"]-360.
+        z = ds["Altitude"]
+        refl = ds["Reflectivity"].values
+        refl_vals = np.zeros(len(z.values)*len(lats.values)*len(lons.values))*np.NaN
+        refl_vals[inds.values] = refl
+        refl_reshape = refl_vals.reshape((len(z.values), len(lats.values),
+                                            len(lons.values)))
+        # Initialize DataArray to concatenate
+        da = xr.DataArray(refl_reshape, coords=[z, lats, lons])
+        da.attrs['Analysis_Endtime'] = time
+        da.name = "Reflectivity"
+        # Concatenate new DataArray onto original
+        dat = xr.concat([dat, da], dim='Hours')
+    # Add the end datetime object as an attribute
+    dat.attrs["Analysis_Endtime"] = time
+    return dat
+
+# Gridrad subset data to a response box
+def plot_refl_rbox(gridradfiles, rboxpath, zlev):
+    """
+    Read a GridRad file over a specified portion of the
+    country, as specified by an esens.in file.
+
+    Inputs
+    ------
+    infile -------- absolute path to GridRad nc file to
+                    process
+    rboxpath ------ absolute path to esens.in file provided
+                    to sensitivity code that contains
+                    response box bounds
+    zlev ---------- zero-based vertical level to plot
+
+    Outputs
+    -------
+    returns data dictionary similar to read_file() output
+    except only over a response box
+    """
+    # Read response box bounds
+    esensin = np.genfromtxt(rboxpath)
+    rbox_bounds = esensin[4:8]
+
+    # Merge data
+    dat = merge_refl_data(gridradfiles)
+    lons = dat["Longitude"]
+    lats = dat["Latitude"]
+
+    # Build meshgrid
+    xmesh, ymesh = np.meshgrid(lons, lats)
+
+    ########### Plot original radar data over response box ##################
+    # Build response box
+    llon, ulon, llat, ulat = rbox_bounds
+    width = ulon - llon
+    height = ulat - llat
+
+    # Initialize plot
+    fig = plt.figure(figsize=(10, 10))
+
+    # Build projection/map
+    ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal())
+    state_borders = cfeat.NaturalEarthFeature(category='cultural',
+               name='admin_1_states_provinces_lakes', scale='50m', facecolor='None')
+    ax.add_feature(state_borders, linestyle="-", edgecolor='dimgray')
+    ax.add_feature(cfeat.BORDERS, edgecolor='dimgray')
+    ax.add_feature(cfeat.COASTLINE, edgecolor='dimgray')
+    # Add rbox and zoom extent to rbox/nearest surrounding area
+    rbox = patches.Rectangle((llon, llat), width, height, transform=ccrs.PlateCarree(),
+                             fill=False, color='green', linewidth=2., zorder=3.)
+    ax.add_patch(rbox)
+    ax.set_extent([llon-10.0, ulon+10.0, llat-5.0, ulat+5.0])
+
+    for i in range(len(dat.values)):
+        endtime_minus_nhrs = len(dat.values) - i
+        time = str(datetime.strptime(dat.Analysis_Endtime, "%Y-%m-%d %H:%M:%SZ") + \
+                timedelta(hours=-1*endtime_minus_nhrs)).replace(" ", "_")
+        print("Plotting GridRad data for", time)
+        # Plot radar data
+        refl = ax.contourf(xmesh, ymesh, dat.values[i,zlev],
+                    transform=ccrs.PlateCarree(), cmap="pyart_HomeyerRainbow")
+        plt.colorbar(refl, ax=ax, label="Reflectivity",
+                    fraction=0.0289, pad=0.0)
+        plt.title("GridRad Vertical-Level-{} Reflectivity Data valid {}".format(zlev+1,
+                    time))
+        figname = 'gridrad_zlev{}_valid{}.png'.format(zlev, time)
+        plt.savefig(figname)
+    return
