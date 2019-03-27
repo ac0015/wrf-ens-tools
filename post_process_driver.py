@@ -24,29 +24,30 @@ subset_sizes = [1, 2, 4, 6, 10, 15, 20, 25, 30, 35, 40]
 subset_methods = ['weight']
 # New testing configuration
 sensvars = [['300_hPa_GPH', '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind',
+            '500_hPa_GPH', '500_hPa_T', '500_hPa_U-Wind', '500_hPa_V-Wind',
+            '700_hPa_T'], # HWT Config
+            ['300_hPa_GPH', '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind',
                 '500_hPa_GPH', '500_hPa_T', '500_hPa_U-Wind', '500_hPa_V-Wind',
-                '700_hPa_T'],   # HWT Config
-            ['300_hPa_GPH', '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind'],
-                '500_hPa_GPH', '500_hPa_T', '500_hPa_U-Wind', '500_hPa_V-Wind',
-                '700_hPa_GPH', '700_hPa_T',
-                '700_hPa_U-Wind', '700_hPa_V-Wind'], # Upper-level vars
+                '700_hPa_GPH', '700_hPa_T', '700_hPa_U-Wind',
+                '700_hPa_V-Wind'], # UA
             ['850_hPa_GPH', '850_hPa_T', '850_hPa_U-Wind', '850_hPa_V-Wind',
                 '925_hPa_T', '925_hPa_U-Wind', '925_hPa_V-Wind',
-                '2m_Temp', '2m_Dewpt', '10m_U-Wind', '10m_V-Wind'], # Low-level vars
+                '2m_Temp', '10m_U-Wind', '10m_V-Wind'], # Low-level
             ['SLP'], # SLP
-            ['300_hPa_GPH', '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind',
-                 '500_hPa_GPH', '500_hPa_T', '500_hPa_U-Wind', '500_hPa_V-Wind',
-                 '700_hPa_GPH', '700_hPa_T', '700_hPa_U-Wind', '700_hPa_V-Wind',
-                 '850_hPa_GPH', '850_hPa_T', '850_hPa_U-Wind', '850_hPa_V-Wind',
-                 '925_hPa_T', '925_hPa_U-Wind', '925_hPa_V-Wind',
-                 'SLP', '2m_Temp', '2m_Dewpt', '10m_U-Wind', '10m_V-Wind']] # All
+            ['300_hPa_GPH',
+                '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind',
+                '500_hPa_GPH', '500_hPa_T', '500_hPa_U-Wind', '500_hPa_V-Wind',
+                '700_hPa_GPH', '700_hPa_T', '700_hPa_U-Wind', '700_hPa_V-Wind',
+                '850_hPa_GPH', '850_hPa_T', '850_hPa_U-Wind', '850_hPa_V-Wind',
+                '925_hPa_T', '925_hPa_U-Wind', '925_hPa_V-Wind',
+                'SLP', '2m_Temp', '10m_U-Wind', '10m_V-Wind']] # All
 
-percents = [0., 10., 20., 30., 40., 50., 60., 70., 80., 90.]
+percents = [0., 20., 40., 60., 80.]
 uh_thresh = [25., 40., 100.]
 nbrs = [30.0]
 pperfnbrs = [80.0]
 rfunctions = ["UH Coverage", "UH Maximum"]
-analysis = ["WRF"]
+analysis = ["WRF", "RAP"]
 analysis_fhr = 0
 ########################################################################
 
@@ -84,7 +85,7 @@ for rfunc in rfunctions:
                 print("Changed to:", os.getcwd())
                 if os.path.exists(outpath):
                    os.remove(outpath)
-                post.storeNearestNeighbor(init, [rtime],
+                post.storeNearestNeighborFortran(init, rtime,
                                           str(outpath), sixhour=sixhour,
                                           wrfrefpath="/lustre/scratch/aucolema/2016052600/wrfoutREFd2")
                 print("YAY I'm done with reliability ob stuff")
@@ -125,7 +126,7 @@ for rfunc in rfunctions:
                         sub.interpRAP()
             del sub
             if sixhour:
-                statspath = direc + 'sixhr_stats_sig1_nbr30.nc'
+                statspath = direc + 'sixhr_stats_sig1_nbr30_stime{}.nc'.format(S.getSensTime())
             else:
                 statspath = direc + 'onehr_stats_sig1_nbr30.nc'
             # Get stats for different subset combos

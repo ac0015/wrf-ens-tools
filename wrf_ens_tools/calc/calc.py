@@ -23,9 +23,11 @@ import os
 import csv
 import sys
 from wrf_ens_tools.post import post_process as pp
+from profilehooks import profile
 
 package_dir =  os.path.dirname(os.path.abspath(__file__))
 
+@profile
 def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
     """
     A method which interpolates a function
@@ -114,6 +116,7 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
             hour = rdate.hour
             hours = [(hour - i)%24 for i in range(1,7)]
             mask = [(hr in hours) for hr in time]
+            print('Reports valid {} to {}'.format(hours[-1],hours[0]))
         else:
             hour = rdate.hour
             mask = [(hr == (hour-1)%24) for hr in time]
@@ -697,6 +700,7 @@ def ReliabilityTotal(probpath, runinitdate, fhr, obpath=None, var='updraft_helic
 
     return prob_bins, fcstfreq_tot, ob_hr_tot
 
+@profile
 def ReliabilityRbox(probpath, runinitdate, fhr,  rboxpath, obpath=None,
                 var='updraft_helicity',
                 thresh=25.,sixhr=False, nbrhd=0.):
@@ -784,7 +788,7 @@ def ReliabilityRbox(probpath, runinitdate, fhr,  rboxpath, obpath=None,
     dx = probdat.DX / 1000. # dx in km
     r = nbrhd/dx
     # Get arrays of x and y indices for distance calculations
-    yinds, xinds = np.meshgrid(np.arange(len(lons[0,:])), np.arange(len(lats[:])))
+    xinds, yinds = np.meshgrid(np.arange(len(lons[0,:])), np.arange(len(lats[:])))
 
     # Sort probabilities into bins
     fcstfreq_tot = np.zeros((len(prob_bins)))   # N probs falling into bin for whole domain
@@ -800,7 +804,13 @@ def ReliabilityRbox(probpath, runinitdate, fhr,  rboxpath, obpath=None,
         lonmask = (lons > llon) & (lons < ulon)
         latmask = (lats > llat) & (lats < ulat)
         mask = lonmask & latmask
+        # print(len(lons[xinds[mask]]))
+        print(fcstprobs.shape)
         masked_probs = np.ma.masked_array(fcstprobs, mask=~mask)
+        print(llat, ulat, llon, ulon)
+        print(lats[np.ma.where(masked_probs)])
+        print(np.ma.where(masked_probs))
+        print("Number of Rbox points:", len(np.ma.where(masked_probs)[0]))
 
     for i in range(len(prob_bins)):
         hits = 0
@@ -811,22 +821,34 @@ def ReliabilityRbox(probpath, runinitdate, fhr,  rboxpath, obpath=None,
         if rboxpath is not None:
             fcstinds = np.ma.where((np.abs(masked_probs - prob) <= 10) & \
                                 (masked_probs < prob))
+            # print(fcstinds)
             fcstfreq_rbox[i] = len(fcstinds[0])
             if fcstfreq_rbox[i] == 0:
                 ob_hr_rbox[i] = 0
             else:
+                import matplotlib.pyplot as plt
+                # fig, ((ax)) = plt.subplots(1, 1, figsize=(15,15))
                 for fcstind in list(zip(fcstinds[0].ravel(), fcstinds[1].ravel())):
-                    mask = dist_mask(fcstind[1], fcstind[0], xinds, yinds, r)
+                    # print(lats[fcstind[0], fcstind[1]], lons[fcstind[0], fcstind[1]])
+                    mask = dist_mask(fcstind[0], fcstind[1], yinds, xinds, r)
                     masked_grid = np.ma.masked_array(grid, mask=~mask)
+                    # Dost thou desire a sanity check?
+                    # clevs = np.linspace(0,2,4)
+                    # ax.contourf(grid, clevs)
+                    # ax.contourf(masked_grid, clevs, cmap="jet")
                     if (masked_grid == 1).any():
                         hits += 1
                 tot = len(list(zip(fcstinds[0].ravel(),
                                             fcstinds[1].ravel())))
                 ob_hr_rbox[i] = hits / tot
                 print("Rbox Hits/Total: ", hits, tot)
+                # ax.set_title("Fcst Frequency: {}; Ob Hit Rate: {}".format(fcstfreq_rbox[i],
+                                    # ob_hr_rbox[i]))
+                # plt.savefig("slow_rel_prob{}-{}.png".format(prob-10,prob))
 
     return prob_bins, fcstfreq_rbox, ob_hr_rbox
 
+@profile
 def scipyReliabilityRbox(probpath, runinitdate, fhr,  rboxpath,
                 obpath=None, var='updraft_helicity',
                 thresh=25.,sixhr=False, nbrhd=0.):
@@ -929,24 +951,26 @@ def scipyReliabilityRbox(probpath, runinitdate, fhr,  rboxpath,
         llon, ulon, llat, ulat = np.array(rbox, dtype=float)
         lonmask = (lons > llon) & (lons < ulon)
         latmask = (lats > llat) & (lats < ulat)
-        mask = lonmask & latmask
+        mask = latmask & lonmask
         masked_probs = np.ma.masked_array(fcstprobs, mask=~mask)
 
     # Apply smoother to act as a neighborhood
-    nbrhd_grid = ndimage.gaussian_filter(grid, sigma=r, order=0)
+    # nbrhd_grid = ndimage.gaussian_filter(grid, sigma=r, order=0)
     # print(grid[grid>0])
-    # import matplotlib.pyplot as plt
-    # fig, ((ax1, ax2, ax3)) = plt.subplots(1, 3, sharex='col', sharey='row')
-    # clevs = np.linspace(0,1,50)
-    # og = ax1.contourf(grid, clevs, cmap="viridis")
+    # print(nbrhd_grid[grid>0])
+    import matplotlib.pyplot as plt
+    # fig, ((ax1, ax2)) = plt.subplots(1, 2, sharex='col', sharey='row', figsize=(15,15))
+    # clevs = np.linspace(0,1,100)
+    # og = ax1.contourf(grid, clevs, cmap="jet")
     # plt.colorbar(og, ax=ax1)
-    # smooth = ax2.contourf(nbrhd_grid, clevs, cmap="viridis")
+    # clevs = np.linspace(0,0.5,100)
+    # smooth = ax2.contourf(nbrhd_grid, clevs, cmap="jet")
     # plt.colorbar(smooth, ax=ax2)
-    # clevs = np.linspace(-1,1,101)
-    # print(np.min(nbrhd_grid-grid), np.max(nbrhd_grid-grid))
-    # diff = ax3.contourf(nbrhd_grid-grid, clevs, cmap="RdBu_r")
-    # plt.colorbar(diff, ax=ax3)
-    # plt.show()
+    # clevs = np.linspace(-0.3,0.1,100)
+    # # print(np.min(nbrhd_grid-grid), np.max(nbrhd_grid-grid))
+    # # diff = ax3.contourf(nbrhd_grid-grid, clevs, cmap="viridis")
+    # # plt.colorbar(diff, ax=ax3)
+    # plt.savefig("scipy_smoothed_grid.png")
 
     for i in range(len(prob_bins)):
         hits = 0
@@ -956,20 +980,35 @@ def scipyReliabilityRbox(probpath, runinitdate, fhr,  rboxpath,
         # If verifying subsets, we want the reliability inside the response box
         if rboxpath is not None:
             # Find indices where fcst probs fall into bin
-            fcstinds = np.ma.where((np.abs(masked_probs - prob) <= 10) & \
-                                (masked_probs < prob))
-            fcstfreq_rbox[i] = len(fcstinds[0])
+            # fcstinds = np.ma.where((np.abs(masked_probs - prob) <= 10) & \
+            #                     (masked_probs < prob))
+            fcstmask = (np.abs(fcstprobs - prob) <= 10) & (fcstprobs < prob)
+            fcstmask = fcstmask.astype(float)
+            print(fcstmask[mask&(fcstmask>0)])
+            fuzzy_fcstmask = ndimage.uniform_filter(fcstmask, size=r)
+            fuzzy_fcstmask = (fuzzy_fcstmask > 0)
+            print(fuzzy_fcstmask[fuzzy_fcstmask == True])
+            # print(fuzzy_fcstmask[fuzzy_fcstmask>0.0000000001 & mask])
+            combo_mask = (fuzzy_fcstmask > 0)
+            masked_grid = np.ma.masked_array(grid, mask=~(mask & fuzzy_fcstmask))
+            fig = plt.figure(figsize=(15,15))
+            clevs = np.linspace(0,1,50)
+            yo = plt.contourf(masked_grid, clevs, cmap='jet')
+            plt.colorbar(yo)
+            fcstfreq_rbox[i] = len(fuzzy_fcstmask[(mask & fuzzy_fcstmask)])
             if fcstfreq_rbox[i] == 0:
                 ob_hr_rbox[i] = 0
             else:
                 # Subset of smoothed ob grid that exceeds 0 constitutes a hit
-                where = np.where(nbrhd_grid[fcstinds] > 0)
+                where = np.ma.where(masked_grid[mask & (fuzzy_fcstmask)] > 0)
                 hits = len(where[0])
-                tot = len(list(zip(fcstinds[0].ravel(),
-                                            fcstinds[1].ravel())))
                 # Define ob hit rate
-                ob_hr_rbox[i] = hits / tot
-                print("Rbox Hits/Total: ", hits, tot)
+                ob_hr_rbox[i] = hits / fcstfreq_rbox[i]
+                print("Rbox Hits/Total: ", hits, fcstfreq_rbox[i])
+            plt.title("Fcst Freq: {}; Hits: {}".format(fcstfreq_rbox[i],
+                        hits))
+            plt.savefig("scipy_prob{}-{}.png".format(prob-10,prob))
+            plt.close()
 
     return prob_bins, fcstfreq_rbox, ob_hr_rbox
 

@@ -22,8 +22,12 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import cartopy.crs as ccrs
 import cartopy.feature as cfeat
+from .interp_analysis import subprocess_cmd
 import pyart
 import os
+from shutil import copyfile
+
+package_dir = os.path.dirname(os.path.abspath(__file__))
 
 dflt_var = ['td2', 'T2']
 dflt_pres = [300., 500., 700., 850., 925.]
@@ -629,6 +633,7 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, sixhour=True,
                                 wrfrefpath=wrfrefpath)
     # Set up netCDF
     netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
+    netcdf_out.SIXHOUR = str(sixhour)
     netcdf_out.createDimension('Time', len(fcsthrs))
     netcdf_out.createDimension('south_north', len(grid[:,0]))
     netcdf_out.createDimension('west_east', len(grid[0,:]))
@@ -642,6 +647,108 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, sixhour=True,
         nearest_out[t] = grid[:]
         times[t] = fcsthrs[t]
     netcdf_out.close()
+    return
+
+def storeNearestNeighborFortran(modelinit, fcsthr, outpath, sixhour=True,
+                            wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs'
+                                       '/2016050800/wrfoutREFd2'):
+    '''
+    Calculate hourly nearest neighbor on WRF grid.
+    Overwrite to WRF outfile for fast verification
+    with Fortran 77.
+
+    Inputs
+    ------
+    modelinit - WRF run initialization datetime obj
+                for formatting times correctly.
+                (WRF run doesn't need to exist,
+                just need baseline datetime to add
+                forecast hours to.)
+    fcsthr ---- forecast hour integer in
+                hours since modelinit time.
+    outpath --- string specifying absolute path of
+                netCDF output.
+    sixhour --- boolean specifying whether to store
+                six-hour or one-hour period of
+                nearest neighbor storm reports
+
+    Outputs
+    -------
+    returns NULL, but saves to netCDF outpath.
+    '''
+    # Create outfile
+    #os.popen("cp {} {}".format(wrfrefpath, outpath))
+    # os.popen("cp {} {}".format(wrfrefpath, outpath))
+    copyfile(wrfrefpath, outpath)
+    netcdf_out = Dataset(outpath, "a")
+    obvar = "P_HYD"
+    netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
+    netcdf_out.SIXHOUR = str(sixhour)
+    netcdf_out.FHR = fcsthr
+
+    # Populate outfile with gridded observations
+    grid = calc.nearest_neighbor_spc(modelinit, sixhour, fcsthr, nbrhd=0.,
+                                    wrfrefpath=wrfrefpath)
+    netcdf_out.variables[obvar][0,0,:,:] = grid[:,:]
+
+    netcdf_out.close()
+    return
+
+def storeReliabilityRboxFortran(basedir, fcsthr, probpath, obpath, outfile,
+                rboxpath, sixhour=True, variable="updraft_helicity",
+                rthresh=25.0, nbrhd=30.0,
+                wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs'
+                '/2016050800/wrfoutREFd2'):
+    """
+    Calculates reliability using fortran 77 code and stores
+    it to a file called "reliability_out.nc" in the same directory
+    in which the function was called.
+
+    Inputs
+    ------
+    basedir ----------- absolute path to the base directory
+                        in which the reliability output file
+                        will be stored.
+    fcsthr ------------ integer in number of forecast hours
+                        since run initialization.
+    probpath ---------- absolute filepath to probability
+                        netCDF file.
+    obpath ------------ absolute path to output file from
+                        storeNearestNeighborFortran()
+                        call.
+    rboxpath ---------- absolute path to "esens.in" file
+                        to pull response box bounds from.
+    nbrhd ------------- searching radius in km to calculate
+                        reliability with (should be the same
+                        neighborhood used in probability
+                        calculations).
+
+    Outputs
+    -------
+    returns NULL but stores all response box reliability
+    statistics to 'reliability_out.nc' in the given
+    base directory.
+    """
+    esensin = np.genfromtxt(rboxpath)
+    rbox_bounds = esensin[4:8]
+    if os.path.exists(basedir+'reliability.in'):
+        subprocess_cmd("rm {}/reliability.in".format(basedir))
+    args = [str("\\'"+probpath+"\\'"), str("\\'"+obpath+"\\'"),
+            str("\\'"+outfile+"\\'"),
+            fcsthr, str("\\'"+variable+"\\'"),
+            rthresh, sixhour, nbrhd, rbox_bounds[0],
+            rbox_bounds[1], rbox_bounds[2], rbox_bounds[3]]
+    print("Throwing these into reliability.in")
+    print(args)
+    # np.savetxt(basedir+"reliability.in", np.asarray(args))
+    os.popen("echo {} > {}reliability.in".format(args[0], basedir))
+    for arg in args[1::]:
+        os.popen("echo {} >> {}reliability.in".format(arg, basedir))
+    if os.path.exists(basedir+'reliability_out.nc'):
+        subprocess_cmd("rm {}/reliability_out.nc".format(basedir))
+    print(basedir)
+    subprocess_cmd("{}/reliabilitycalc <{}/reliability.in \
+                    >{}reliability.out".format(package_dir, basedir, basedir))
     return
 
 # TO-DO: to make real-time useable, add prob calculation
