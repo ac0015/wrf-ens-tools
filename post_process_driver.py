@@ -42,12 +42,12 @@ sensvars = [['300_hPa_GPH', '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind',
                 '925_hPa_T', '925_hPa_U-Wind', '925_hPa_V-Wind',
                 'SLP', '2m_Temp', '10m_U-Wind', '10m_V-Wind']] # All
 
-percents = [0., 20., 40., 60., 80.]
+percents = [0., 10., 20., 30., 40., 50., 60., 70., 80., 90.]
 uh_thresh = [25., 40., 100.]
 nbrs = [30.0]
 pperfnbrs = [80.0]
-rfunctions = ["UH Coverage", "UH Maximum"]
-analysis = ["WRF", "RAP"]
+rfunctions = ["UH Coverage"] # , "UH Maximum"]
+analysis = ["WRF"] #, "RAP"]
 analysis_fhr = 0
 ########################################################################
 

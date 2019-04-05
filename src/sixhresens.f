@@ -32,6 +32,7 @@ c$$  11/20/2018
       integer mix,mjx,mkx,permissr,permissw,rnum,iunitobs
       integer iunitwrite1,iunitread,timesens,timeresponse
       integer i,j,k,f
+      real q2max, q2maxii, q2maxjj, u10maxii, u10maxjj, u10max
       real, pointer::gph300mean(:,:)
       real, pointer::gph500mean(:,:)
       real, pointer::gph700mean(:,:)
@@ -311,7 +312,7 @@ c$$  11/20/2018
       real kap,prefcont,kapdiv
       integer m,ensnum,ensnumax
       integer numpoints
-      character*20 infilemeanSENS,infilemeanR, infilerefvar 
+      character*20 infilemeanSENS,infilemeanR, infilerefvar
       character*20 infilerefvard2,outfile2
       integer iunitmean, iunitref, rcode,numtimes,timer, iunit2
       real grav,obdiff,obspd,pmin
@@ -341,7 +342,7 @@ c$$  11/20/2018
       real uhavgMEM
       real uhmaxMEM
       real uhcovMEM
-      real dbzcovMEM 
+      real dbzcovMEM
       real gobvar300,gobvar500,gobvar700,gobvar850
       real gobvar925
       real tobvar300,tobvar500,tobvar700,tobvar850
@@ -440,12 +441,12 @@ C$$$$ read in namelist values for R calculations
 c$$ Optional add on - save member response vectors to netCDF
 c$$  by setting scatter to true
 
-      read*,scatter 
-      
+      read*,scatter
+
 c$$ UH Threshold (only for UH Coverage)
 
       read*,uhthresh
-     
+
 c$$ DBZ Threshold (only for DBZ Coverage)
 
       read*,dbzthresh
@@ -480,7 +481,7 @@ c$$$ Initialize constants
       timeresponse=timer
       numtimes=48
 
-C$$$ Convert lat/lon to i,j 
+C$$$ Convert lat/lon to i,j
 
       call set_domain_proj(infilerefvard2, proj_in)
 
@@ -503,7 +504,7 @@ c$$$  variable arrays
       write(senstime, '(i2)') timesens
       write(rtime, '(i2)') timer
 
-      infileSENS = (/ 
+      infileSENS = (/
      &     'mem1/SENS1_' // trim(adjustl(senstime)) // '.out',
      &     'mem2/SENS2_' // trim(adjustl(senstime)) // '.out',
      &     'mem3/SENS3_' // trim(adjustl(senstime)) // '.out',
@@ -544,7 +545,7 @@ c$$$  variable arrays
      &     'mem38/SENS38_' // trim(adjustl(senstime)) // '.out',
      &     'mem39/SENS39_' // trim(adjustl(senstime)) // '.out',
      &     'mem40/SENS40_' // trim(adjustl(senstime)) // '.out',
-     &     'mem41/SENS41_' // trim(adjustl(senstime)) // '.out', 
+     &     'mem41/SENS41_' // trim(adjustl(senstime)) // '.out',
      &     'mem42/SENS42_' // trim(adjustl(senstime)) // '.out' /)
 
       infileR(:,:) = ''
@@ -592,7 +593,7 @@ c$$$  Get response grid dims
       call close_file(iunitref)
 
       rkx = mkx
-     
+
       allocate(evec1(mkx-1))
       allocate(smat(mix-1,mjx-1,mkx-1))
       allocate(tmat(mix-1,mjx-1,mkx-1))
@@ -964,7 +965,7 @@ c$$ First, define response variables
      &              'm/s')
                rcode = nf_put_att_real(fidr,idwspd,'_FillValue',
      &              nf_float,1,fmiss)
-     
+
                rcode = nf_def_var(fidr,'UH_COV',nf_float,
      &              1,mem,iduhcov)
                rcode = nf_put_att_text(fidr,iduhcov, 'description', 33,
@@ -973,7 +974,7 @@ c$$ First, define response variables
      &              'm**2/s**2')
                rcode = nf_put_att_real(fidr,iduhcov,'_FillValue',
      &              nf_float,1,fmiss)
-     
+
                rcode = nf_def_var(fidr,'DBZ_COV',nf_float,
      &              1,mem,iddbzcov)
                rcode = nf_put_att_text(fidr,iddbzcov, 'description', 33,
@@ -1101,34 +1102,34 @@ c$$     &     rjx-1,rkx-1,0,icenum)
       call close_file(iunitread)
 
 c$$$ Goal is to find the maximum rfunc in rbox for each member over
-c$$$  entire six hour time frame.      
+c$$$  entire six hour time frame.
       if (MAXVAL(uhnext(is:ie,js:je)) .GT. uhmaxMEM) then
           uhmaxMEM = MAXVAL(uhnext(is:ie,js:je))
       end if
-      
+
       if (MAXVAL(dbznext(is:ie,js:je,1)) .GT. dbzmaxMEM) then
           dbzmaxMEM = MAXVAL(dbznext(is:ie,js:je,1))
       end if
-      
+
       npts = COUNT((uhnext(is:ie,js:je) .GT. uhthresh))
       uhcovMEM=uhcovMEM+npts
-      
+
       npts = COUNT((dbznext(is:ie,js:je,1) .GT. dbzthresh))
       dbzcovMEM=dbzcovMEM+npts
-      
+
       uphelresponse=uphelresponse+uhnext
       dbzresponse=dbzresponse+dbznext
       pcptotresponse=pcptotresponse+rainncnext
       wspresponse=wspresponse+wspdnext
 
-C$$$ End time loop      
+C$$$ End time loop
       enddo
 
       dbzmaxmean=dbzmaxmean+dbzmaxMEM
       uhmaxmean=uhmaxmean+uhmaxMEM
       uhcovmean=uhcovmean+uhcovMEM
       dbzcovmean=dbzcovmean+dbzcovMEM
-      
+
       print*,'got all vars for member'
       print*,1
 
@@ -1136,12 +1137,12 @@ C$$$ End time loop
 c$$$ Read in all other ens members, summing data for mean
       do m=2,ensnum
       print*, 'Ens mem', m
-      
+
       uhmaxMEM=0.0
       dbzmaxMEM=0.0
       uhcovMEM=0.0
       dbzcovMEM=0.0
-      
+
 c$$$ Beginning of loop through each time
 c$$$  to calculate 6-hr response means
 c$$$ For speed, only calculating means at
@@ -1222,39 +1223,39 @@ c$$     &     rjx-1,rkx-1,0,rainnumnext)
 c$$      call get_variable3d(iunitread,'QNICE',rix-1,
 c$$     &     rjx-1,rkx-1,0,icenumnext)
 
-      call close_file(iunitread) 
+      call close_file(iunitread)
 
-c$$$ Increment max response functions      
+c$$$ Increment max response functions
       if (MAXVAL(uhnext(is:ie,js:je)) .GT. uhmaxMEM) then
           uhmaxMEM = MAXVAL(uhnext(is:ie,js:je))
       end if
-      
+
       if (MAXVAL(dbznext(is:ie,js:je,1)) .GT. dbzmaxMEM) then
           dbzmaxMEM = MAXVAL(dbznext(is:ie,js:je,1))
       end if
 
-C$$$ Increment coverage response functions      
+C$$$ Increment coverage response functions
        npts = COUNT((uhnext(is:ie,js:je) .GT. uhthresh))
        print*, 'Number of points in rbox exceeding uh threshold for mem'
        print*, npts
        uhcovMEM=uhcovMEM+npts
-      
+
        npts = COUNT((dbznext(is:ie,js:je,1) .GT. dbzthresh))
        dbzcovMEM=dbzcovMEM+npts
        print*,'Number of points in rbox exceeding dbz threshold for mem'
        print*, npts
-      
+
       uphelresponse=uphelresponse+uhnext
       dbzresponse=dbzresponse+dbznext
       pcptotresponse=pcptotresponse+rainncnext
       wspresponse=wspresponse+wspdnext
-      
+
 c$$      uu=uu+uunext
 c$$      vv=vv+vvnext
 c$$      ww=ww+wwnext
 c$$      ph=ph+phnext
 c$$      phb=phb+phbnext
-c$$      t=t+tnext         
+c$$      t=t+tnext
 c$$      mu=mu+munext
 c$$      mub=mub+mubnext
 c$$      p=p+pnext
@@ -1280,7 +1281,7 @@ c$$      hailnc=hailnc+hailncnext
 c$$      graupelnc=graupelnc+graupelncnext
 
 c$$$ End of loop through times
-      enddo     
+      enddo
 
       dbzmaxmean=dbzmaxmean+dbzmaxMEM
       uhmaxmean=uhmaxmean+uhmaxMEM
@@ -1301,7 +1302,7 @@ c$$      mub=mub/ensnum
 c$$      p=p/ensnum
       dbzresponse=dbzresponse/ensnum
       uphelresponse=uphelresponse/ensnum
-      
+
 c$$      phyd=phyd/ensnum
 c$$      pb=pb/ensnum
 c$$      q2=q2/ensnum
@@ -1398,12 +1399,12 @@ c$$     &     rjx-1,rkx-1,cc,icenum)
       call close_file(iunitwritemean)
 
 c$$$ Don't divide by six hours because you want mean over
-c$$$  entire 
+c$$$  entire
       dbzmaxmean=dbzmaxmean/ensnum
       uhmaxmean=uhmaxmean/ensnum
       uhcovmean=uhcovmean/ensnum
       dbzcovmean=dbzcovmean/ensnum
-      
+
       print*, "DBZ Max Mean: ", dbzmaxmean
       print*, "UH Max Mean: ", uhmaxmean
       print*, "Done with response means"
@@ -1429,12 +1430,6 @@ c$$$ Read sens-time means from file
      &     mjx-1,mkx-1,timesens,qvapormean)
       call get_variable2d(iunitmean,'T2',mix-1,
      &     mjx-1,timesens,t2mean)
-      call get_variable2d(iunitmean,'Q2',mix-1,
-     &     mjx-1,timesens,q2mean)
-      call get_variable2d(iunitmean,'U10',mix-1,
-     &     mjx-1,timesens,u10mean)
-      call get_variable2d(iunitmean,'V10',mix-1,
-     &     mjx-1,timesens,v10mean)
       call get_variable2d(iunitmean,'RAINNC',mix-1,
      &     mjx-1,timesens,pcptotmean)
 c$$      call get_variable2d(iunitmean,'UP_HELI_MAX',mix-1,
@@ -1458,7 +1453,7 @@ C$$$ Destagger winds
          enddo
       enddo
 
-c$$$ Calculate other variables for sensitivity calcs 
+c$$$ Calculate other variables for sensitivity calcs
 
 c$$$  Transform perturbation theta to temp
 
@@ -1481,7 +1476,7 @@ c$$$  First calculate total geopotential
      &                       phbmean(i,j,k)
             enddo
          enddo
-      enddo  
+      enddo
 
 c$$$ Calculate geopotential height
 
@@ -1522,7 +1517,7 @@ c$$$ Get geopotential height on half levels
 
       do i=1,mix-1
          do j=1,mjx-1
-            call destag_zstag(znu, znw, mkx-1, 
+            call destag_zstag(znu, znw, mkx-1,
      &           gpheightmean(i,j,:),gpheightmeanhalf(i,j,:))
          enddo
       enddo
@@ -1605,7 +1600,7 @@ c$$$ Calculate SLP
 
       do i=1,mix-1
          do j=1,mjx-1
-            slpmean(i,j)=slp_standard_atmos(t2mean(i,j), 
+            slpmean(i,j)=slp_standard_atmos(t2mean(i,j),
      &           psfcmean(i,j),q2mean(i,j),hgt(i,j))
          enddo
       enddo
@@ -1614,7 +1609,7 @@ c$$$ Calculate dew point
 
       do i=1,mix-1
          do j=1,mjx-1
-            td2mean(i,j)=mixrat_to_tdew(q2mean(i,j), 
+            td2mean(i,j)=mixrat_to_tdew(q2mean(i,j),
      &           psfcmean(i,j))
          enddo
       enddo
@@ -1634,8 +1629,15 @@ c$$$ Interpolate U, V, T to desired pressure levels
             t925mean(i,j)=interp_pres(tempmean(i,j,:),
      &           totpresmean(i,j,:),92500.,mkx-1)
          enddo
-      enddo 
-    
+      enddo
+
+c$$$ Have been having issues with 2m-variable variances
+c$$$  so using lowest-sigma level instead
+
+      q2mean = qvapormean(:,:,1)
+      u10mean = uucrossmean(:,:,1)
+      v10mean = vvcrossmean(:,:,1)
+
 c$$$  Read forecast time means then calculate
 c$$$  6-hr response function means
 
@@ -1645,17 +1647,17 @@ c$$$  6-hr response function means
       windavg=0.0
       uhcov=0.0
 
-c$$$ 6-hr means are stored at the response time hour, so only open that     
+c$$$ 6-hr means are stored at the response time hour, so only open that
       do cc=timer,timer
           print*, "Re-open response time mean file"
           print*, infilemeanR
           print*, "Current time", cc
-    
+
           call open_file(infilemeanR,permissr,iunitmean)
-          call get_variable2d(iunitmean,'U10',rix-1,
-     &     rjx-1,cc,u10response)
-          call get_variable2d(iunitmean,'V10',rix-1,
-     &     rjx-1,cc,v10response)
+          call get_variable3d(iunitmean,'U',rix-1,
+     &     rjx-1,1,cc,u10response)
+          call get_variable3d(iunitmean,'V',rix-1,
+     &     rjx-1,1,cc,v10response)
           call get_variable3d(iunitmean,'PH',rix-1,
      &     rjx-1,rkx,cc,phresponse)
           call get_variable3d(iunitmean,'T',rix-1,
@@ -1666,8 +1668,6 @@ c$$$ 6-hr means are stored at the response time hour, so only open that
      &     rjx-1,rkx-1,cc,qvaporresponse)
           call get_variable2d(iunitmean,'T2',rix-1,
      &     rjx-1,cc,t2response)
-          call get_variable2d(iunitmean,'Q2',rix-1,
-     &     rjx-1,cc,q2response)
           call get_variable2d(iunitmean,'RAINNC',rix-1,
      &     rjx-1,1,pcptotresponse)
           call get_variable2d(iunitmean,'UP_HELI_MAX',rix-1,
@@ -1676,10 +1676,12 @@ c$$$ 6-hr means are stored at the response time hour, so only open that
      &     rjx-1,cc,wspresponse)
           call get_variable3d(iunitmean,'REFL_10CM',rix-1,
      &     rjx-1,rkx-1,cc,dbzresponse)
-          call close_file(iunitmean) 
-    
+          call close_file(iunitmean)
+
+          q2response = qvaporresponse(:,:,1)
+
 c$$$  Transform perturbation theta to temp
-    
+
           do i=1,rix-1
              do j=1,rjx-1
                 do k=1,rkx-1
@@ -1687,11 +1689,11 @@ c$$$  Transform perturbation theta to temp
                 enddo
              enddo
           enddo
-    
+
 c$$$  Calculate total pressure
-    
+
 c$$$  First calculate total geopotential
-    
+
           do k=1,rkx
              do i=1,rix-1
                 do j=1,rjx-1
@@ -1699,19 +1701,19 @@ c$$$  First calculate total geopotential
      &                       phbmean(i,j,k)
                 enddo
              enddo
-          enddo    
-    
+          enddo
+
 c$$$  Next calculate dry total surface pressure
-    
+
           do i=1,rix-1
              do j=1,rjx-1
                 surfptotalresponse(i,j)=muresponse(i,j)+
      &                      mubmean(i,j)
              enddo
           enddo
-    
+
 c$$$  Next calculate dry air density
-    
+
           do k=1,rkx-1
              levee=znw(k+1)-znw(k)
              do i=1,rix-1
@@ -1722,11 +1724,11 @@ c$$$  Next calculate dry air density
                 enddo
              enddo
           enddo
-    
+
 c$$$ Calculate geopotential height
-    
+
           gpheightresponse(:,:,:)=gpttotresponse(:,:,:)/grav
-    
+
 c$$$ Now the total pressure
           do i=1,rix-1
              do j=1,rjx-1
@@ -1737,19 +1739,19 @@ c$$$ Now the total pressure
                 enddo
              enddo
           enddo
-    
+
 c$$$ Get geopotential height on half levels
-    
+
           do i=1,rix-1
              do j=1,rjx-1
-                call destag_zstag(znu, znw, mkx-1, 
+                call destag_zstag(znu, znw, mkx-1,
      &           gpheightresponse(i,j,:),
      &           gpheighthalfresponse(i,j,:))
              enddo
           enddo
-    
+
 c$$$ Now calculate temperature from theta,totpres
-    
+
           do k=1,rkx-1
              do j=1,rjx-1
                 do i=1,rix-1
@@ -1758,9 +1760,9 @@ c$$$ Now calculate temperature from theta,totpres
                 enddo
              enddo
           enddo
-    
+
 c$$$ Calculate Surface Pressure
-    
+
           do i=1,rix-1
              do j=1,rjx-1
                 psfcresponse(i,j)=totpresresponse(i,j,1)*
@@ -1769,27 +1771,27 @@ c$$$ Calculate Surface Pressure
      &           *(1+qvaporresponse(i,j,1)))))
              enddo
           enddo
-    
+
 c$$$ Calculate SLP
-    
+
           do i=1,rix-1
              do j=1,rjx-1
-                slpresponse(i,j)=slp_standard_atmos(t2response(i,j), 
+                slpresponse(i,j)=slp_standard_atmos(t2response(i,j),
      &           psfcresponse(i,j),q2response(i,j),hgt(i,j))
              enddo
           enddo
-    
+
 C$$$ Calculate Response function means of choice
-    
+
 C$$$ Increment 6-h Avg sim dBZ
 
           do i=is,ie
              do j=js,je
-        	         dbzavg=dbzavg+dbzresponse(i,j,1)
+                         dbzavg=dbzavg+dbzresponse(i,j,1)
              enddo
           enddo
-              
-C$$$ Inrement uphel 
+
+C$$$ Inrement uphel
 
           do i=is,ie
              do j=js,je
@@ -1804,8 +1806,8 @@ C$$$ Accum pcp
                 pcp=pcp+pcptotresponse(i,j)
              enddo
           enddo
-          
-    
+
+
 C$$$ Avg max 10-m winds
 
           do i=is,ie
@@ -1815,13 +1817,13 @@ C$$$ Avg max 10-m winds
           enddo
 c$$ end of 6-hr time frame
       enddo
-     
+
 c$$ Finish response box means
       dbzavg=dbzavg/((ie-is+1)*(je-js+1)*6)
       uhavg=uhavg/((ie-is+1)*(je-js+1)*6)
       pcp=(pcp/((ie-is+1)*(je-js+1)*6))/25.4
       windavg=windavg/((ie-is+1)*(je-js+1)*6)
-     
+
 C$$$ Need variance of all sens variables
 
       gph300var(:,:)=0.0
@@ -1899,8 +1901,8 @@ c$$$ Read in all ens members
       do m=1,ensnum
 
 c$$$ first sens-time vars
-      
-      print*, 'Current SENS Member: ' // infileSENS(m)      
+
+      print*, 'Current SENS Member: ' // infileSENS(m)
 
       call open_file(infileSENS(m),permissr,iunitread)
       call get_variable3d(iunitread,'U',mix,
@@ -1917,12 +1919,6 @@ c$$$ first sens-time vars
      &     mjx-1,mkx-1,1,qvapor)
       call get_variable2d(iunitread,'T2',mix-1,
      &     mjx-1,1,t2)
-      call get_variable2d(iunitread,'Q2',mix-1,
-     &     mjx-1,1,q2)
-      call get_variable2d(iunitread,'U10',mix-1,
-     &     mjx-1,1,u10)
-      call get_variable2d(iunitread,'V10',mix-1,
-     &     mjx-1,1,v10)
       call get_variable2d(iunitread,'RAINNC',mix-1,
      &     mjx-1,1,pcptot)
       call get_variable2d(iunitread,'UP_HELI_MAX',mix-1,
@@ -1946,7 +1942,7 @@ C$$$ Destagger winds
          enddo
       enddo
 
-c$$$ Calculate other variables for sensitivity calcs 
+c$$$ Calculate other variables for sensitivity calcs
 
 c$$$  Transform perturbation theta to temp
 
@@ -1969,7 +1965,7 @@ c$$$  First calculate total geopotential
      &                       phb(i,j,k)
             enddo
          enddo
-      enddo  
+      enddo
 
 c$$$ Calculate geopotential height
 
@@ -2010,7 +2006,7 @@ c$$$ Get geopotential height on half levels
 
       do i=1,mix-1
          do j=1,mjx-1
-            call destag_zstag(znu, znw, mkx-1, 
+            call destag_zstag(znu, znw, mkx-1,
      &           gpheight(i,j,:),gpheighthalf(i,j,:))
          enddo
       enddo
@@ -2056,7 +2052,7 @@ c$$$ Calculate SLP
 
       do i=1,mix-1
          do j=1,mjx-1
-            slp(i,j)=slp_standard_atmos(t2(i,j), 
+            slp(i,j)=slp_standard_atmos(t2(i,j),
      &           psfc(i,j),q2(i,j),hgt(i,j))
          enddo
       enddo
@@ -2065,7 +2061,7 @@ c$$$ Calculate dew point
 
       do i=1,mix-1
          do j=1,mjx-1
-            td2(i,j)=mixrat_to_tdew(q2(i,j), 
+            td2(i,j)=mixrat_to_tdew(q2(i,j),
      &           psfc(i,j))
          enddo
       enddo
@@ -2258,7 +2254,7 @@ c$$$      enddo
             v925var(i,j)=v925var(i,j)+
      &      (v925(i,j)-v925mean(i,j))**2
          enddo
-      enddo      
+      enddo
 
       do i=1,mix-1
          do j=1,mjx-1
@@ -2276,6 +2272,16 @@ c$$$      enddo
      &      (v10(i,j)-v10mean(i,j))**2
          enddo
       enddo
+      q2 = qvapor(:,:,1)
+      u10 = uucross(:,:,1)
+      v10 = vvcross(:,:,1)
+
+c      print*, "U10 Lowest variance", u10(u10maxii, u10maxjj)
+      print*, "V10 variance", v10var(v10maxii, v10maxjj)
+      print*, "V10 Mean", v10mean(v10maxii, v10maxjj)
+      print*, "V10 Lowest variance", v10(v10maxii, v10maxjj)
+
+c      print*, "Q2 Lowest variance", q2(q2maxii, q2maxjj)
 
 c$$$ Now get all forecast-time response funciton vars
 
@@ -2288,15 +2294,11 @@ c$$$ Initialize member values
       dbzmaxMEM=0.0
       uhcovMEM=0.0
       dbzcovMEM=0.0
-      
+
       do cc=1,6
       print*, 'Current Response Member: ' // infileR(cc,m)
-      
+
       call open_file(infileR(cc,m),permissr,iunitread)
-      call get_variable2d(iunitread,'U10',rix-1,
-     &     rjx-1,1,u10response)
-      call get_variable2d(iunitread,'V10',rix-1,
-     &     rjx-1,1,v10response)
       call get_variable3d(iunitread,'PH',rix-1,
      &     rjx-1,rkx,1,phresponse)
       call get_variable3d(iunitread,'T',rix-1,
@@ -2307,8 +2309,6 @@ c$$$ Initialize member values
      &     rjx-1,rkx-1,1,qvaporresponse)
       call get_variable2d(iunitread,'T2',rix-1,
      &     rjx-1,1,t2response)
-      call get_variable2d(iunitread,'Q2',rix-1,
-     &     rjx-1,1,q2response)
       call get_variable2d(iunitread,'RAINNC',rix-1,
      &     rjx-1,1,pcptotresponse)
       call get_variable2d(iunitread,'UP_HELI_MAX',rix-1,
@@ -2318,6 +2318,7 @@ c$$$ Initialize member values
       call get_variable3d(iunitread,'REFL_10CM',rix-1,
      &     rjx-1,rkx-1,1,dbzresponse)
       call close_file(iunitread)
+      q2response = qvaporresponse(:,:,1)
 
 c$$$  Transform perturbation theta to temp
 
@@ -2340,7 +2341,7 @@ c$$$  First calculate total geopotential
      &                       phbmean(i,j,k)
             enddo
          enddo
-      enddo    
+      enddo
 
 c$$$  Next calculate dry total surface pressure
 
@@ -2383,7 +2384,7 @@ c$$$ Get geopotential height on half levels
 
       do i=1,rix-1
          do j=1,rjx-1
-            call destag_zstag(znu, znw, mkx-1, 
+            call destag_zstag(znu, znw, mkx-1,
      &           gpheightresponse(i,j,:),
      &           gpheighthalfresponse(i,j,:))
          enddo
@@ -2415,7 +2416,7 @@ c$$$ Calculate SLP
 
       do i=1,rix-1
          do j=1,rjx-1
-            slpresponse(i,j)=slp_standard_atmos(t2response(i,j), 
+            slpresponse(i,j)=slp_standard_atmos(t2response(i,j),
      &           psfcresponse(i,j),q2response(i,j),hgt(i,j))
          enddo
       enddo
@@ -2424,7 +2425,7 @@ C$$$ Calculate R of choice
 
 C$$$ Avg sim dBZ
 
-      
+
       do i=is,ie
          do j=js,je
             dbzavgMEM=dbzavgMEM+dbzresponse(i,j,1)
@@ -2450,7 +2451,7 @@ C$$$ Max uphel
       if (MAXVAL(uphelresponse(is:ie,js:je)) > uhmaxMEM) then
           uhmaxMEM=MAXVAL(uphelresponse(is:ie,js:je))
       end if
-  
+
 C$$$ Accum pcp
 
       do i=is,ie
@@ -2465,9 +2466,9 @@ C$$$ Avg 10-m winds
          do j=js,je
             windavgMEM=windavgMEM+wspresponse(i,j)
          enddo
-      enddo    
-      
-C$$$ Increment coverage response functions      
+      enddo
+
+C$$$ Increment coverage response functions
 
 c$$$ UH Coverage
       npts = COUNT((uphelresponse(is:ie,js:je) .GT. uhthresh))
@@ -2479,11 +2480,11 @@ c$$$ DBZ Coverage
       npts = COUNT((dbzresponse(is:ie,js:je,1) .GT. dbzthresh))
       dbzcovMEM=dbzcovMEM+npts
       print*,"Number of points in rbox exceeding dbz threshold for mem"
-      print*, npts  
-     
+      print*, npts
+
 c$$$ End 6-hr time loop
       enddo
-      
+
 c$$$ Finish six-hour member averages
       dbzavgMEM=dbzavgMEM/((ie-is+1)*(je-js+1)*6)
       uhavgMEM=uhavgMEM/((ie-is+1)*(je-js+1)*6)
@@ -2494,14 +2495,14 @@ c$$$ Assemble R perts from mean in column vector
 
       print*, "Avg dBZ for member", dbzavgMEM
       print*, "Mean Avg dBZ", dbzavg
-      print*, "Max dBZ for member", dbzmaxMEM 
+      print*, "Max dBZ for member", dbzmaxMEM
       print*, "Mean Max dBZ", dbzmaxmean
       print*, "Avg UH for member", uhavgMEM
       print*, "Mean Avg UH", uhavg
       print*, "Max UH for member", uhmaxMEM
       print*, "Mean Max UH", uhmaxmean
       print*, "Avg Accum Precip for member", pcpMEM
-      print*, "Mean Avg Accump Precip", pcp 
+      print*, "Mean Avg Accump Precip", pcp
       print*, "Avg Wind for member", windavgMEM
       print*, "Mean Avg Wind", windavg
       print*, "UH Coverage for member", uhcovMEM
@@ -2517,7 +2518,7 @@ c$$$ Assemble R perts from mean in column vector
       evec1(6)=windavgMEM-windavg
       evec1(7)=uhcovMEM-uhcovmean
       evec1(8)=dbzcovMEM-dbzcovmean
-      
+
 c$$$ Create vector of responses
 
       dbzavgvec(m) = dbzavgMEM
@@ -2528,7 +2529,7 @@ c$$$ Create vector of responses
       windavgvec(m) = windavgMEM
       uhcovvec(m) = uhcovMEM
       dbzcovvec(m) = dbzcovMEM
-      
+
 c$$$ Calculate covariances b/w response function, IC vars
       print*, evec1(rrr)
       do i=1,mix-1
@@ -2611,6 +2612,29 @@ c$$$ Calculate covariances b/w response function, IC vars
 
 c$$$ End of loop through ens members
       enddo
+
+        do i=1,mix-1
+        do j=1,mjx-1
+           if (q2var(i,j) .eq. minval(q2var)) then
+              print*, "MIN Q2 VARIANCE", minval(q2var)
+              q2maxii = i
+              q2maxjj = j
+           endif
+           if (u10var(i,j) .eq. minval(u10var)) then
+              print*, "MIN U10 VARIANCE", minval(u10var)
+              u10maxii = i
+              u10maxjj = j
+           endif
+           if (v10var(i,j) .eq. minval(v10var)) then
+              print*, "MIN V10 VARIANCE", minval(v10var)
+              v10maxii = i
+              v10maxjj = j
+           endif
+        enddo
+       enddo
+      print*, "Q2 Min var loc", q2maxii, q2maxjj
+      print*, "V10 min var loc", v10maxii, v10maxjj
+      print*, "U10 min var loc", u10maxii, u10maxjj
 
 C$$$ Calcualte esens, store in covar variables
 
@@ -2773,7 +2797,7 @@ C$$$ Assemble single response into compressed data vars
 
 C$$$ Section here for writing esens, targ, means
 
-      call open_file(outfile1,permissw,iunit1)      
+      call open_file(outfile1,permissw,iunit1)
       call write_variable3d(iunit1,'P_HYD',mix-1,
      &     mjx-1,mkx-1,1,smat)
       call write_variable3d(iunit1,'QICE',mix-1,

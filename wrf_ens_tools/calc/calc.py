@@ -546,9 +546,8 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
     #     probs = ndimage.gaussian_filter(probs, sigma=smooth_w_sigma)
 
     # First calculate FBS (Fractions Brier Score) on whole grid
-    wrf.disable_xarray()
-    lats = wrf.getvar(probdat, 'lat')
-    lons = wrf.getvar(probdat, 'lon')
+    lats = probdat.variables['XLAT'][0]
+    lons = probdat.variables['XLONG'][0]
     npts = len(lats[:,0]) * len(lons[0,:])
     fbs = 0.
     fbs_worst = 0.
@@ -574,8 +573,9 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
             lonmask = (lons > llon) & (lons < ulon)
             latmask = (lats > llat) & (lats < ulat)
             mask = lonmask & latmask
-            print("Min/Max Lon:", np.min(lons[lonmask]), np.max(lons[lonmask]))
-            print("Min/Max Lat:", np.min(lats[latmask]), np.max(lats[latmask]))
+            print(np.shape(mask))
+            print("Min/Max Lon:", np.min(lons[mask]), np.max(lons[mask]))
+            print("Min/Max Lat:", np.min(lats[mask]), np.max(lats[mask]))
             masked_probs = probs[mask]
             masked_obs = obs[obind][mask]
             npts = len(masked_probs); fbs = 0.; fbs_worst = 0.

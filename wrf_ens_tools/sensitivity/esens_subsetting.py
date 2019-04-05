@@ -74,7 +74,7 @@ def percent(matrix, percent):
         mask[i] = (matrix[i] < threshval)
         #print(np.where(~mask))
         maxval.append(np.max(matrix[i]))
-        print("Max values: ", maxval)
+        # print("Max values: ", maxval)
     return mask, maxval
 
 def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,

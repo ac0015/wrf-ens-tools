@@ -906,6 +906,9 @@ class Subset:
             og_ds = xr.open_dataset(outpath)
             print("Opened original dataset...")
             # Check first to see if we need to add full ens reliability
+            print("Current Rthresh",
+                self._thresh, "Current Full Ens Thresh Vals",
+                og_ds.Full_Ens_Response_Thresh.values)
             if (self._thresh not in og_ds.Full_Ens_Response_Thresh.values):
                 print("Processing full ens reliability for new threshold...")
                 success = False
@@ -918,11 +921,10 @@ class Subset:
                                 rthresh=self._thresh, nbrhd=self._nbr,
                                 wrfrefpath=S.getRefFileD2())
                     success = checkSuccess()
-                fens_reliability = xr.open_dataset(S.getDir()+"/reliability_out.nc")
+                fens_reliability = xr.open_dataset(outrel)
                 prob_bins = fens_reliability["prob_bins"]
                 f_fcstfreq_rbox = fens_reliability["fcst_frequency"]
                 f_ob_hr_rbox = fens_reliability["ob_hit_rate"]
-                fens_reliability.close()
                 new_ds = xr.Dataset({'Full_Ens_Response_Thresh': (['rthresh'],
                                             np.atleast_1d(self._thresh)),
                                     'Full_Ens_Fcst_Freq_Rbox': (['rthresh', 'prob_bins'],
@@ -932,16 +934,24 @@ class Subset:
                                     coords={'run': S.getRunInit(),
                                             'bins': prob_bins,
                                             'rbox': ['llon', 'ulon', 'llat', 'ulat']})
-                ds = xr.concat([ds, new_ds], dim='rthresh', data_vars='minimal')
+                print(new_ds)
+                fens_reliability.close()
+                og_fens_ds = xr.concat([og_ds, new_ds], dim='rthresh',
+                                data_vars=['Full_Ens_Response_Thresh',
+                                'Full_Ens_Fcst_Freq_Rbox',
+                                'Full_Ens_Ob_Hit_Rate_Rbox'])
                 new_ds.close()
-                print("Concatenated rel to appending dataset...\n", ds)
-            # Finally concatenate with existing netCDF dataset
-            ds = xr.concat([og_ds, ds], dim='subset', data_vars='minimal')
+                print("Concatenated rel to appending dataset...\n", og_fens_ds)
+                # Finally concatenate with existing netCDF dataset
+                ds = xr.concat([og_fens_ds, ds], dim='subset', data_vars='minimal')
+            else:
+                ds = xr.concat([og_ds, ds], dim='subset', data_vars='minimal')
             og_ds.close()
             print("Appended new dataset to original dataset...\n\n", ds)
             # os.popen("rm {}".format(outpath))
         else:
             print("Adding full ens rel to ", ds)
+            success = False
             while (success == False):
                 storeReliabilityRboxFortran(S.getDir(), S.getRTime(),
                             fensprobpath, reliabilityobpath, outrel,
@@ -951,7 +961,7 @@ class Subset:
                             rthresh=self._thresh, nbrhd=self._nbr,
                             wrfrefpath=S.getRefFileD2())
                 success = checkSuccess()
-            fens_reliability = xr.open_dataset(S.getDir()+"/reliability_out.nc")
+            fens_reliability = xr.open_dataset(outrel)
             prob_bins = fens_reliability["prob_bins"]
             f_fcstfreq_rbox = fens_reliability["fcst_frequency"]
             f_ob_hr_rbox = fens_reliability["ob_hit_rate"]
