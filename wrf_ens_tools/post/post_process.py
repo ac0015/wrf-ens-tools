@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import cartopy.crs as ccrs
 import cartopy.feature as cfeat
-from .interp_analysis import subprocess_cmd
+from .interp_analysis import subprocess_cmd, reflectivity_to_eventgrid
 import pyart
 import os
 from shutil import copyfile
@@ -650,8 +650,11 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, sixhour=True,
     return
 
 def storeNearestNeighborFortran(modelinit, fcsthr, outpath, sixhour=True,
+                            variable="updraft_helicity",
                             wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs'
-                                       '/2016050800/wrfoutREFd2'):
+                                       '/2016050800/wrfoutREFd2',
+                            interpgridradfiles=None,
+                            reflthreshold=None):
     '''
     Calculate hourly nearest neighbor on WRF grid.
     Overwrite to WRF outfile for fast verification
@@ -659,18 +662,27 @@ def storeNearestNeighborFortran(modelinit, fcsthr, outpath, sixhour=True,
 
     Inputs
     ------
-    modelinit - WRF run initialization datetime obj
-                for formatting times correctly.
-                (WRF run doesn't need to exist,
-                just need baseline datetime to add
-                forecast hours to.)
-    fcsthr ---- forecast hour integer in
-                hours since modelinit time.
-    outpath --- string specifying absolute path of
-                netCDF output.
-    sixhour --- boolean specifying whether to store
-                six-hour or one-hour period of
-                nearest neighbor storm reports
+    modelinit ------------- WRF run initialization datetime obj
+                            for formatting times correctly.
+                            (WRF run doesn't need to exist,
+                            just need baseline datetime to add
+                            forecast hours to.)
+    fcsthr ---------------- forecast hour integer in
+                            hours since modelinit time.
+    outpath --------------- string specifying absolute path of
+                            netCDF output.
+    sixhour --------------- boolean specifying whether to store
+                            six-hour or one-hour period of
+                            nearest neighbor storm reports.
+    variable -------------- defaults to 'updraft_helicity' but
+                            also supports reliability processing
+                            for 'reflectivity'.
+    interpgridradfiles ---- if verifying reflectivity, will need
+                            to provide list of interpolated
+                            GridRad radar filepaths.
+    reflthreshold --------- if verifying reflectivity, will need
+                            to provide an exceedance threshold as
+                            a float.
 
     Outputs
     -------
@@ -687,8 +699,13 @@ def storeNearestNeighborFortran(modelinit, fcsthr, outpath, sixhour=True,
     netcdf_out.FHR = fcsthr
 
     # Populate outfile with gridded observations
-    grid = calc.nearest_neighbor_spc(modelinit, sixhour, fcsthr, nbrhd=0.,
+    if variable == "updraft_helicity":
+        grid = calc.nearest_neighbor_spc(modelinit, sixhour, fcsthr, nbrhd=0.,
                                     wrfrefpath=wrfrefpath)
+    elif variable == "reflectivity":
+        grid = reflectivity_to_eventgrid(interp_gridradfiles=interpgridradfiles,
+                runinitdate=modelinit, sixhr=sixhour, rtime=fcsthr,
+                threshold=reflthreshold)
     netcdf_out.variables[obvar][0,0,:,:] = grid[:,:]
 
     netcdf_out.close()
@@ -701,8 +718,7 @@ def storeReliabilityRboxFortran(basedir, fcsthr, probpath, obpath, outfile,
                 '/2016050800/wrfoutREFd2'):
     """
     Calculates reliability using fortran 77 code and stores
-    it to a file called "reliability_out.nc" in the same directory
-    in which the function was called.
+    it to 'outfile' in the same directory in which the function was called.
 
     Inputs
     ------
@@ -716,6 +732,8 @@ def storeReliabilityRboxFortran(basedir, fcsthr, probpath, obpath, outfile,
     obpath ------------ absolute path to output file from
                         storeNearestNeighborFortran()
                         call.
+    outfile ----------- absolute path to file where
+                        reliability will be stored.
     rboxpath ---------- absolute path to "esens.in" file
                         to pull response box bounds from.
     nbrhd ------------- searching radius in km to calculate
@@ -744,9 +762,10 @@ def storeReliabilityRboxFortran(basedir, fcsthr, probpath, obpath, outfile,
     os.popen("echo {} > {}reliability.in".format(args[0], basedir))
     for arg in args[1::]:
         os.popen("echo {} >> {}reliability.in".format(arg, basedir))
-    if os.path.exists(basedir+'reliability_out.nc'):
-        subprocess_cmd("rm {}/reliability_out.nc".format(basedir))
-    print(basedir)
+    if os.path.exists(outfile):
+        subprocess_cmd("rm {}".format(outfile))
+        print("Removed old reliability output file...")
+    print("Running reliability arguments...")
     subprocess_cmd("{}/reliabilitycalc <{}/reliability.in \
                     >{}reliability.out".format(package_dir, basedir, basedir))
     return

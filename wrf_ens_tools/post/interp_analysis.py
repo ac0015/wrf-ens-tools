@@ -234,23 +234,61 @@ def plotRAPinterp(rapfile, var="500_hPa_GPH"):
     plt.close()
     return
 
-def interp_gridrad_to_binary(gridrad_interpfile, threshold):
+################################################################################
+####################### GridRad Interpolation Methods ##########################
+################################################################################
+def reflectivity_to_eventgrid(interp_gridradfiles, runinitdate,
+                                    sixhr, rtime, threshold):
     """
-    Converts an interpolated GridRad reflectivity grid to a binary grid
-    describing threshold exceedances in hits and misses. NOTE: If a file
-    with multiple timestamps is found, this function will calculate the
-    binary field accumulated over all time steps found in the dataset.
+    Converts an xarray reflectivity DataArray object to a binary grid of
+    hits and misses relative to a threshold and time slice. This method
+    should be used mainly for reliability calculations.
 
     Inputs
     ------
-    gridrad_interpfile -------- absolute path to GridRad file which has been
-                                interpolated to WRF grid and may contain
-                                multiple valid timestamps.
-    threshold ----------------- reflectivity threshold as float to use
-                                to separate hits from misses. 40 dBZ is
-                                a common threshold.
+    interp_gridradfiles ------- list of interpolated GridRad filepaths
+    runinitdate --------------- datetime object for model initialization
+                                used
+    sixhr --------------------- boolean specifying whether to use a six
+                                hour or one hour time frame (set to True
+                                for six hour time frame)
+    rtime --------------------- response time (end of 1- or 6-hr time
+                                frame of interest)
+    threshold ----------------- reflectivity magnitude any given point
+                                must exceed to be counted as a "hit" on
+                                the binary grid
+
+    Outputs
+    -------
+    returns a 2D numpy array as a grid of 1's (hits) and 0's (misses)
+    relative to the specified threshold
     """
-    ds = xr.open_dataset(gridrad_interpfile)
+    # Get shape data
+    refl_data = xr.open_dataset(interp_gridradfiles[0])
+    print(refl_data)
+    lons = refl_data["XLONG"].values[0]
+    agg_refl_mask = np.zeros_like(lons, dtype=bool)
+    # Determine time slice to aggregate refl data over
+    if sixhr:
+        rdates = [runinitdate + timedelta(hours=i) for i in range(rtime-5,
+                                                                rtime)]
+    else:
+        rdates = [runinitdate + timedelta(hours=rtime)]
+    # Go through each gridrad file and aggregate binary grid
+    for i, interp_refl in enumerate(interp_gridradfiles):
+        refl_data = xr.open_dataset(interp_refl)
+        start = str(refl_data.STARTDATE)
+        start_datetime = datetime(year=int(start[:4]), month=int(start[4:6]),
+                                    day=int(start[6:8]), hour=int(start[8:10]))
+        if start_datetime in rdates:
+            refl = refl_data["GridRad_Refl"].values[0]
+            print("Max GridRad value: ", np.nanmax(refl))
+            refl_mask = (refl > threshold)
+            agg_refl_mask[refl_mask | agg_refl_mask] = True
+        else:
+            print("{} not in response time frame of interest. Moving on..."
+                    .format(start_datetime))
+    return agg_refl_mask
 
 def horiz_interp_and_store_gridrad(gridrad_file, interpto_file, out_file,
                                     zlev):
@@ -305,9 +343,11 @@ def horiz_interp_and_store_gridrad(gridrad_file, interpto_file, out_file,
         mode = "a"
     else:
         mode = "w"
+    print(mode)
     nc_out = Dataset(out_file, mode)
+    print(mode)
+    nc_out.STARTDATE = og_gridrad.datehour.values
     if mode == "w":
-        nc_out.STARTDATE = og_gridrad.datehour.values
         nc_out.createDimension('Time', size=None)
         nc_out.createDimension('south_north', size=len(lats[:,0]))
         nc_out.createDimension('west_east', size=len(lons[0,:]))
@@ -318,7 +358,8 @@ def horiz_interp_and_store_gridrad(gridrad_file, interpto_file, out_file,
                 dimensions=('Time', 'south_north', 'west_east'))
         xlong[0] = lons
         reflout = nc_out.createVariable("GridRad_Refl", np.float64,
-                dimensions=('Time', 'south_north', 'west_east'))
+                dimensions=('Time', 'south_north', 'west_east'),
+                fill_value=9e9)
         reflout[0] = interp_refl
         zlevel = nc_out.createVariable('zlev', np.int, dimensions=('Time'))
         zlevel[:] = zlev

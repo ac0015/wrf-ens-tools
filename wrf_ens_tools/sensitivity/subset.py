@@ -791,7 +791,6 @@ class Subset:
             outfile_writer.writerow(entry)
         return
 
-    @profile
     def storeUHStatsNetCDF(self, outpath, pperfpath, reliabilityobpath):
         """
         Stores UH verification stats to netCDF4 file using xarray.
@@ -860,7 +859,7 @@ class Subset:
                 success = checkSuccess()
                 i += 1
             # Process result with xarray
-            sub_reliability = xr.open_dataset(S.getDir()+"/reliability_out.nc")
+            sub_reliability = xr.open_dataset(outrel)
             prob_bins = sub_reliability["prob_bins"]
             s_fcstfreq_rbox = sub_reliability["fcst_frequency"]
             s_ob_hr_rbox = sub_reliability["ob_hit_rate"]
@@ -925,6 +924,7 @@ class Subset:
                 prob_bins = fens_reliability["prob_bins"]
                 f_fcstfreq_rbox = fens_reliability["fcst_frequency"]
                 f_ob_hr_rbox = fens_reliability["ob_hit_rate"]
+                print("New threshold full ob hit rate", f_ob_hr_rbox)
                 new_ds = xr.Dataset({'Full_Ens_Response_Thresh': (['rthresh'],
                                             np.atleast_1d(self._thresh)),
                                     'Full_Ens_Fcst_Freq_Rbox': (['rthresh', 'prob_bins'],
@@ -944,6 +944,7 @@ class Subset:
                 print("Concatenated rel to appending dataset...\n", og_fens_ds)
                 # Finally concatenate with existing netCDF dataset
                 ds = xr.concat([og_fens_ds, ds], dim='subset', data_vars='minimal')
+                og_fens_ds.close()
             else:
                 ds = xr.concat([og_ds, ds], dim='subset', data_vars='minimal')
             og_ds.close()
@@ -980,7 +981,6 @@ class Subset:
 
         return
 
-
     def storeReflStatsNetCDF(self, outpath, gridradfiles):
         """
         Function for storing subset simulated reflectivity verification
@@ -1001,22 +1001,68 @@ class Subset:
         S = self.getSens()
         fensprobpath = S.getDir() + "probs/" + self._fensprob
         subprobpath = S.getDir() + "probs/" + self._subprob
+        outrel = S.getDir() + "reliability_out.nc"
         rtimedate = S.getRunInit() + timedelta(hours=S.getRTime())
-        fens_fss = FSS(fensprobpath, pperfpath, rtimedate, var='reflectivity',
-                  thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
-        sub_fss = FSS(subprobpath, pperfpath, rtimedate, var='updraft_helicity',
-                  thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
-        sub_reliability = ReliabilityRbox(subprobpath,
-                                      S.getRunInit(), S.getRTime(),
-                                      obpath=reliabilityobpath,
-                                      var='updraft_helicity',
-                                      thresh=self._thresh,
-                                      rboxpath=S.getDir()+'esens.in',
-                                      sixhr=False, nbrhd=self._nbr)
-        # prob_bins will stay the same, so OK to clobber
-        prob_bins, s_fcstfreq_rbox, s_ob_hr_rbox = sub_reliability
-        f_fss_tot, f_fss_rbox, sig = fens_fss
-        s_fss_tot, s_fss_rbox, sig = sub_fss
+
+        def checkSuccess():
+            """
+            Checks to see if the word "SUCCESSFUL"
+            appears in the reliabilitycalc log file, indicating
+            the reliability calculation was completed
+            correctly.
+            """
+            with open(S.getDir()+'reliability.out') as out:
+                lowcase_out = [o.lower() for o in out]
+                success = (np.array(['successful' in s for s in lowcase_out]).any())
+            return success
+
+        if os.path.exists(pperfpath):
+            fens_fss = FSS(fensprobpath, pperfpath, rtimedate, var='updraft_helicity',
+                      thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
+            sub_fss = FSS(subprobpath, pperfpath, rtimedate, var='updraft_helicity',
+                      thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
+            f_fss_tot, f_fss_rbox, sig = fens_fss
+            s_fss_tot, s_fss_rbox, sig = sub_fss
+            # If fortran-produced reliability file doesn't exist
+            #  then create it.
+            if os.path.exists(reliabilityobpath) == False:
+                print(reliabilityobpath + " does not exist...")
+                print("Running storeNearestNeighborFortran()...")
+                storeNearestNeighborFortran(S.getRunInit(), S.getRTime(),
+                                                reliabilityobpath,
+                                                sixhour=S.getSixHour(),
+                                                wrfrefpath=S.getRefFileD2())
+            # Process the reliability observation file by calculating
+            #  reliabilty in fortran - those results are stored to
+            #  a netCDF file called 'reliability_out.nc'
+            print("Processing reliability of {} with Fortran...".format(subprobpath))
+            success = False
+            i = 0
+            while (success == False):
+                storeReliabilityRboxFortran(S.getDir(), S.getRTime(),
+                            subprobpath, reliabilityobpath, outrel,
+                            rboxpath=S.getDir()+'esens.in',
+                            sixhour=S.getSixHour(),
+                            variable="updraft_helicity",
+                            rthresh=self._thresh, nbrhd=self._nbr,
+                            wrfrefpath=S.getRefFileD2())
+                print(i)
+                success = checkSuccess()
+                i += 1
+            # Process result with xarray
+            sub_reliability = xr.open_dataset(outrel)
+            prob_bins = sub_reliability["prob_bins"]
+            s_fcstfreq_rbox = sub_reliability["fcst_frequency"]
+            s_ob_hr_rbox = sub_reliability["ob_hit_rate"]
+            sub_reliability.close()
+        else:
+            raise FileNotFoundError('Please run storePracPerf() or \
+            set correct obpath.')
+        # Create entry as xarray dataset
+        sens_vars = np.empty((1, 30), dtype="U30")
+        sens_vars[0, :len(self._sensvars)] = np.asarray(self._sensvars[:])
+        sub_mems = np.zeros((1,len(self._fullens)), dtype=int) * np.NaN
+        sub_mems[0, :len(self.getSubMembers())] = np.asarray(self.getSubMembers())
         ds = xr.Dataset({'Sens_Time': (['subset'], np.atleast_1d(S.getSensTime())),
                  'Subset_Size': (['subset'], np.atleast_1d(self._subsize)),
                  'Analysis': (['subset'], np.atleast_1d(self._analysis_type)),
@@ -1044,21 +1090,32 @@ class Subset:
                                     sub_mems)},
                  coords={'run': S.getRunInit(),
                          # 'subset': np.arange(1),
-                         'prob_bins': prob_bins,
+                         'bins': prob_bins,
                          'rbox': ['llon', 'ulon', 'llat', 'ulat']})
         if os.path.exists(outpath):
             og_ds = xr.open_dataset(outpath)
             print("Opened original dataset...")
             # Check first to see if we need to add full ens reliability
+            print("Current Rthresh",
+                self._thresh, "Current Full Ens Thresh Vals",
+                og_ds.Full_Ens_Response_Thresh.values)
             if (self._thresh not in og_ds.Full_Ens_Response_Thresh.values):
-                fens_reliability = ReliabilityRbox(fensprobpath, S.getRunInit(),
-                                              S.getRTime(),
-                                              obpath=reliabilityobpath,
-                                              var='updraft_helicity',
-                                              thresh=self._thresh,
-                                              rboxpath=S.getDir()+'esens.in',
-                                              sixhr=False, nbrhd=self._nbr)
-                prob_bins, f_fcstfreq_rbox, f_ob_hr_rbox = fens_reliability
+                print("Processing full ens reliability for new threshold...")
+                success = False
+                while (success == False):
+                    storeReliabilityRboxFortran(S.getDir(), S.getRTime(),
+                                fensprobpath, reliabilityobpath, outrel,
+                                rboxpath=S.getDir()+'esens.in',
+                                sixhour=S.getSixHour(),
+                                variable="updraft_helicity",
+                                rthresh=self._thresh, nbrhd=self._nbr,
+                                wrfrefpath=S.getRefFileD2())
+                    success = checkSuccess()
+                fens_reliability = xr.open_dataset(outrel)
+                prob_bins = fens_reliability["prob_bins"]
+                f_fcstfreq_rbox = fens_reliability["fcst_frequency"]
+                f_ob_hr_rbox = fens_reliability["ob_hit_rate"]
+                print("New threshold full ob hit rate", f_ob_hr_rbox)
                 new_ds = xr.Dataset({'Full_Ens_Response_Thresh': (['rthresh'],
                                             np.atleast_1d(self._thresh)),
                                     'Full_Ens_Fcst_Freq_Rbox': (['rthresh', 'prob_bins'],
@@ -1066,27 +1123,41 @@ class Subset:
                                     'Full_Ens_Ob_Hit_Rate_Rbox': (['rthresh', 'prob_bins'],
                                             np.atleast_2d(f_ob_hr_rbox))},
                                     coords={'run': S.getRunInit(),
-                                            # 'subset': np.arange(1),
-                                            'prob_bins': prob_bins,
+                                            'bins': prob_bins,
                                             'rbox': ['llon', 'ulon', 'llat', 'ulat']})
-                ds = xr.concat([ds, new_ds], dim='rthresh', data_vars='minimal')
+                print(new_ds)
+                fens_reliability.close()
+                og_fens_ds = xr.concat([og_ds, new_ds], dim='rthresh',
+                                data_vars=['Full_Ens_Response_Thresh',
+                                'Full_Ens_Fcst_Freq_Rbox',
+                                'Full_Ens_Ob_Hit_Rate_Rbox'])
                 new_ds.close()
-                print("Concatenated rel to appending dataset...\n", ds)
-            # Finally concatenate with existing netCDF dataset
-            ds = xr.concat([og_ds, ds], dim='subset', data_vars='minimal')
+                print("Concatenated rel to appending dataset...\n", og_fens_ds)
+                # Finally concatenate with existing netCDF dataset
+                ds = xr.concat([og_fens_ds, ds], dim='subset', data_vars='minimal')
+                og_fens_ds.close()
+            else:
+                ds = xr.concat([og_ds, ds], dim='subset', data_vars='minimal')
             og_ds.close()
             print("Appended new dataset to original dataset...\n\n", ds)
             # os.popen("rm {}".format(outpath))
         else:
             print("Adding full ens rel to ", ds)
-            fens_reliability = ReliabilityRbox(fensprobpath, S.getRunInit(),
-                                          S.getRTime(),
-                                          obpath=reliabilityobpath,
-                                          var='updraft_helicity',
-                                          thresh=self._thresh,
-                                          rboxpath=S.getDir()+'esens.in',
-                                          sixhr=False, nbrhd=self._nbr)
-            prob_bins, f_fcstfreq_rbox, f_ob_hr_rbox = fens_reliability
+            success = False
+            while (success == False):
+                storeReliabilityRboxFortran(S.getDir(), S.getRTime(),
+                            fensprobpath, reliabilityobpath, outrel,
+                            rboxpath=S.getDir()+'esens.in',
+                            sixhour=S.getSixHour(),
+                            variable="updraft_helicity",
+                            rthresh=self._thresh, nbrhd=self._nbr,
+                            wrfrefpath=S.getRefFileD2())
+                success = checkSuccess()
+            fens_reliability = xr.open_dataset(outrel)
+            prob_bins = fens_reliability["prob_bins"]
+            f_fcstfreq_rbox = fens_reliability["fcst_frequency"]
+            f_ob_hr_rbox = fens_reliability["ob_hit_rate"]
+            fens_reliability.close()
             ds["Full_Ens_Response_Thresh"] = (('rthresh'),
                                         np.atleast_1d(self._thresh))
             ds["Full_Ens_Fcst_Freq_Rbox"] = (('rthresh', 'prob_bins'),

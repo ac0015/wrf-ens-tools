@@ -155,7 +155,6 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
 
         return grid
 
-
 def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     """
     Implementation of SPC practically perfect
