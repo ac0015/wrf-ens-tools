@@ -847,7 +847,6 @@ def ReliabilityRbox(probpath, runinitdate, fhr,  rboxpath, obpath=None,
 
     return prob_bins, fcstfreq_rbox, ob_hr_rbox
 
-@profile
 def scipyReliabilityRbox(probpath, runinitdate, fhr,  rboxpath,
                 obpath=None, var='updraft_helicity',
                 thresh=25.,sixhr=False, nbrhd=0.):
@@ -1060,6 +1059,39 @@ def mse(predictions, targets, axis=None, nan=False):
     return mse_data
 
 ######### GridRad Reflectivity Verification Metrics ##################
+def calc_subset_avg_response_rbox(member_list, rvalues_ncfile, rfuncstr):
+    """
+    Calculates the average response function within a
+    response box over a specified set of one-based subset members.
+
+    Inputs
+    ------
+    member_list ----------- list of one-based integers specifying subset
+                            members to use in calculation
+    rvalues_ncfile -------- absolute path to netCDF file containing
+                            response function (reflectivity) values
+                            from ensemble members. Should be output
+                            of a sixhresens.f call
+    rfuncstr -------------- response function string specifying which
+                            variable to average. Can be any of the following:
+                            (1) DBZ_AVG
+                            (2) DBZ_MAX
+                            (3) UH_AVG
+                            (4) UH_MAX
+                            (5) PCP
+                            (6) WSPD_AVG
+                            (7) UH_COV
+                            (8) DBZ_COV
+
+    Outputs
+    -------
+    returns the average response function value valid in the response
+    box over the specified ensemble members.
+    """
+    ds = xr.open_dataset(rvalues_ncfile)
+    rfunc_vals = ds[rfuncstr].values
+    return np.nanmean(rfunc_vals[member_list-1])
+
 def calc_refl_max_rbox(gridradfiles, rboxpath, zlev):
     """
     Calculates the reflectivity maximum value in a given response
@@ -1122,7 +1154,7 @@ def calc_refl_cov_rbox(gridradfiles, rboxpath, zlev, refl_thresh):
     zlev ------------------ zero-based integer describing which altitude
                             level to pull reflectivity data from
     refl_thresh ----------- float describing reflectivity threshold to
-                            that
+                            calculate coverage with
 
     Outputs
     -------

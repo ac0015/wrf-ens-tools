@@ -15,7 +15,7 @@ from wrf_ens_tools.post import storeReliabilityRboxFortran
 from wrf_ens_tools.post import storeNearestNeighborFortran
 from wrf_ens_tools.plots import plotProbs, plotDiff, plotSixPanels
 from wrf_ens_tools.calc import FSS, scipyReliabilityRbox, ReliabilityRbox
-from wrf_ens_tools.calc import calc_refl_cov_rbox, calc_refl_max_rbox
+from wrf_ens_tools.calc import calc_refl_cov_rbox, calc_refl_max_rbox, calc_subset_avg_response_rbox
 from wrf_ens_tools.post import process_wrf, postTTUWRFanalysis
 from netCDF4 import Dataset
 from profilehooks import profile
@@ -1001,6 +1001,7 @@ class Subset:
         S = self.getSens()
         fensprobpath = S.getDir() + "probs/" + self._fensprob
         subprobpath = S.getDir() + "probs/" + self._subprob
+        rvalspath = S.getDir() + "Rvals.nc"
         outrel = S.getDir() + "reliability_out.nc"
         rtimedate = S.getRunInit() + timedelta(hours=S.getRTime())
 
@@ -1017,19 +1018,43 @@ class Subset:
             return success
 
         if os.path.exists(pperfpath):
-            fens_fss = FSS(fensprobpath, pperfpath, rtimedate, var='updraft_helicity',
+            fens_fss = FSS(fensprobpath, pperfpath, rtimedate, var='reflectivity',
                       thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
-            sub_fss = FSS(subprobpath, pperfpath, rtimedate, var='updraft_helicity',
+            sub_fss = FSS(subprobpath, pperfpath, rtimedate, var='reflectivity',
                       thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
             f_fss_tot, f_fss_rbox, sig = fens_fss
             s_fss_tot, s_fss_rbox, sig = sub_fss
+            if "Coverage" in S.getRString():
+                resp = "DBZ_COV"
+                dbz_ob, npts_rbox = calc_refl_cov_rbox(gridradfiles=gridradfiles,
+                                            rboxpath=S.getDir()+'esens.in',
+                                            zlev=0, refl_thresh=self._thresh)
+            elif "Max" in S.getRString():
+                resp = "DBZ_MAX"
+                dbz_ob, ob_lat, ob_lon = calc_refl_max_rbox(gridradfiles=gridradfiles,
+                                            rboxpath=S.getDir()+'esens.in',
+                                            zlev=0)
+            fens_avg_rval_rbox = calc_subset_avg_response_rbox(member_list=self._fullens,
+                                        rvalues_ncfile=rvalspath,
+                                        rfuncstr=resp)
+            sub_avg_rval_rbox = calc_subset_avg_response_rbox(member_list=self._subset,
+                                        rvalues_ncfile=rvalspath,
+                                        rfuncstr=resp)
+            fens_abs_err = abs(fens_avg_rval_rbox - dbz_ob)
+            sub_abs_err = abs(sub_avg_rval_rbox - dbz_ob)
+            print("Subset {} error: {}".format(S.getRString(), sub_abs_err))
+            print("Full Ensemble {} error: {}".format(S.getRString(), fens_abs_err))
+
             # If fortran-produced reliability file doesn't exist
             #  then create it.
             if os.path.exists(reliabilityobpath) == False:
                 print(reliabilityobpath + " does not exist...")
                 print("Running storeNearestNeighborFortran()...")
                 storeNearestNeighborFortran(S.getRunInit(), S.getRTime(),
-                                                reliabilityobpath,
+                                                outpath=reliabilityobpath,
+                                                variable='reflectivity',
+                                                interp_gridradfiles=gridradfiles,
+                                                reflthreshold=self._thresh,
                                                 sixhour=S.getSixHour(),
                                                 wrfrefpath=S.getRefFileD2())
             # Process the reliability observation file by calculating
@@ -1043,7 +1068,7 @@ class Subset:
                             subprobpath, reliabilityobpath, outrel,
                             rboxpath=S.getDir()+'esens.in',
                             sixhour=S.getSixHour(),
-                            variable="updraft_helicity",
+                            variable="reflectivity",
                             rthresh=self._thresh, nbrhd=self._nbr,
                             wrfrefpath=S.getRefFileD2())
                 print(i)
@@ -1079,6 +1104,8 @@ class Subset:
                  'Full_Ens_FSS_Rbox': (['subset'], np.atleast_1d(f_fss_rbox)),
                  'Subset_FSS_Total': (['subset'], np.atleast_1d(s_fss_tot)),
                  'Subset_FSS_Rbox': (['subset'], np.atleast_1d(s_fss_rbox)),
+                 'Full_Ens_MAE_Rbox' : (['subset'], np.atleast_1d(fens_abs_err)),
+                 'Subset_MAE_Rbox': (['subset'], np.atleast_1d(sub_abs_err)),
                  'Prac_Perf_Sigma': (['subset'], np.atleast_1d(sig[0])),
                  'Neighborhood': (['subset'], np.atleast_1d(self._nbr)),
                  'Response_Thresh': (['subset'], np.atleast_1d(self._thresh)),
