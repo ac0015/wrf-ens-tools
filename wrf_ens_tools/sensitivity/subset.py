@@ -91,6 +91,8 @@ class Subset:
             print("WARNING - Subset obj response threshold and Sensitivity obj\n",
                   "don't match. Only makes a difference if working with coverage\n",
                   "response functions.")
+            print("Sens obj response threshold: ", self._sens.getResponseThreshold())
+            print("Sub obj response threshold: ", self._thresh)
 
         # If method is not in methodchoices, set to percent (RMS) method
         try:
@@ -981,7 +983,8 @@ class Subset:
 
         return
 
-    def storeReflStatsNetCDF(self, outpath, gridradfiles):
+    def storeReflStatsNetCDF(self, outpath, gridradfiles,
+                            reliabilityobpath, og_gridradfiles=None):
         """
         Function for storing subset simulated reflectivity verification
         statistics using GridRad as the observation dataset. Currently
@@ -990,8 +993,14 @@ class Subset:
 
         Inputs
         ------
-        outpath --------- absolute filename for statistics output
-        gridradfiles ---- list of GridRad filepaths
+        outpath ----------- absolute filename for statistics output
+        gridradfiles ------ list of interpolated GridRad filepaths
+        reliabilityobpath - file to store reliability observations
+                            (binary hits/misses given a reflectivity
+                            threshold)
+        og_gridradfiles --- (optional) only need if evaluating refl
+                            maxima - list of absolute paths to
+                            original GridRad files
 
         Outputs
         -------
@@ -1002,7 +1011,7 @@ class Subset:
         fensprobpath = S.getDir() + "probs/" + self._fensprob
         subprobpath = S.getDir() + "probs/" + self._subprob
         rvalspath = S.getDir() + "Rvals.nc"
-        outrel = S.getDir() + "reliability_out.nc"
+        outrel = S.getDir() + "reliability_out_refl.nc"
         rtimedate = S.getRunInit() + timedelta(hours=S.getRTime())
 
         def checkSuccess():
@@ -1017,21 +1026,21 @@ class Subset:
                 success = (np.array(['successful' in s for s in lowcase_out]).any())
             return success
 
-        if os.path.exists(pperfpath):
-            fens_fss = FSS(fensprobpath, pperfpath, rtimedate, var='reflectivity',
-                      thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
-            sub_fss = FSS(subprobpath, pperfpath, rtimedate, var='reflectivity',
-                      thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
-            f_fss_tot, f_fss_rbox, sig = fens_fss
-            s_fss_tot, s_fss_rbox, sig = sub_fss
+        if os.path.exists(fensprobpath):
+            #fens_fss = FSS(fensprobpath, pperfpath, rtimedate, var='reflectivity',
+            #          thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
+            #sub_fss = FSS(subprobpath, pperfpath, rtimedate, var='reflectivity',
+            #          thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
+            #f_fss_tot, f_fss_rbox, sig = fens_fss
+            #s_fss_tot, s_fss_rbox, sig = sub_fss
             if "Coverage" in S.getRString():
                 resp = "DBZ_COV"
-                dbz_ob, npts_rbox = calc_refl_cov_rbox(gridradfiles=gridradfiles,
+                dbz_ob, npts_rbox = calc_refl_cov_rbox(interpgridradfiles=gridradfiles,
                                             rboxpath=S.getDir()+'esens.in',
                                             zlev=0, refl_thresh=self._thresh)
             elif "Max" in S.getRString():
                 resp = "DBZ_MAX"
-                dbz_ob, ob_lat, ob_lon = calc_refl_max_rbox(gridradfiles=gridradfiles,
+                dbz_ob = calc_refl_max_rbox(gridradfiles=og_gridradfiles,
                                             rboxpath=S.getDir()+'esens.in',
                                             zlev=0)
             fens_avg_rval_rbox = calc_subset_avg_response_rbox(member_list=self._fullens,
@@ -1040,6 +1049,9 @@ class Subset:
             sub_avg_rval_rbox = calc_subset_avg_response_rbox(member_list=self._subset,
                                         rvalues_ncfile=rvalspath,
                                         rfuncstr=resp)
+            print("Full Ensemble Average {} Rbox: {}".format(resp, fens_avg_rval_rbox))
+            print("Subset Average {} Rbox: {}".format(resp, sub_avg_rval_rbox))
+            print("{} Observation Rbox: {}".format(resp, dbz_ob))
             fens_abs_err = abs(fens_avg_rval_rbox - dbz_ob)
             sub_abs_err = abs(sub_avg_rval_rbox - dbz_ob)
             print("Subset {} error: {}".format(S.getRString(), sub_abs_err))
@@ -1100,13 +1112,12 @@ class Subset:
                  'Response_Time': (['subset'], np.atleast_1d(S.getRTime())),
                  'Response_Box': (['subset', 'rbox'],
                                     np.atleast_2d(S.getRbox())),
-                 'Full_Ens_FSS_Total': (['subset'], np.atleast_1d(f_fss_tot)),
-                 'Full_Ens_FSS_Rbox': (['subset'], np.atleast_1d(f_fss_rbox)),
-                 'Subset_FSS_Total': (['subset'], np.atleast_1d(s_fss_tot)),
-                 'Subset_FSS_Rbox': (['subset'], np.atleast_1d(s_fss_rbox)),
+                 #'Full_Ens_FSS_Total': (['subset'], np.atleast_1d(f_fss_tot)),
+                 #'Full_Ens_FSS_Rbox': (['subset'], np.atleast_1d(f_fss_rbox)),
+                 #'Subset_FSS_Total': (['subset'], np.atleast_1d(s_fss_tot)),
+                 #'Subset_FSS_Rbox': (['subset'], np.atleast_1d(s_fss_rbox)),
                  'Full_Ens_MAE_Rbox' : (['subset'], np.atleast_1d(fens_abs_err)),
                  'Subset_MAE_Rbox': (['subset'], np.atleast_1d(sub_abs_err)),
-                 'Prac_Perf_Sigma': (['subset'], np.atleast_1d(sig[0])),
                  'Neighborhood': (['subset'], np.atleast_1d(self._nbr)),
                  'Response_Thresh': (['subset'], np.atleast_1d(self._thresh)),
                  'Subset_Fcst_Freq_Rbox': (['subset', 'prob_bins'],
@@ -1134,7 +1145,7 @@ class Subset:
                                 fensprobpath, reliabilityobpath, outrel,
                                 rboxpath=S.getDir()+'esens.in',
                                 sixhour=S.getSixHour(),
-                                variable="updraft_helicity",
+                                variable="reflectivity",
                                 rthresh=self._thresh, nbrhd=self._nbr,
                                 wrfrefpath=S.getRefFileD2())
                     success = checkSuccess()
@@ -1176,7 +1187,7 @@ class Subset:
                             fensprobpath, reliabilityobpath, outrel,
                             rboxpath=S.getDir()+'esens.in',
                             sixhour=S.getSixHour(),
-                            variable="updraft_helicity",
+                            variable="reflectivity",
                             rthresh=self._thresh, nbrhd=self._nbr,
                             wrfrefpath=S.getRefFileD2())
                 success = checkSuccess()

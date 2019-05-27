@@ -522,7 +522,7 @@ def FSS(probpath, obspath, fhr, var='updraft_helicity',
     print("Fcst hr for FSS calc: ", fhrs[obind])
 
     # Choose correct indices based on variable and threshold
-    probinds = {'reflectivity': {40: 0},
+    probinds = {'reflectivity': {40: 0, 50: 5},
                 'updraft_helicity': {25: 1, 40: 2, 100: 3},
                 'wind_speed': {40: 4}}
     # If UH, pull practically perfect
@@ -649,7 +649,7 @@ def ReliabilityTotal(probpath, runinitdate, fhr, obpath=None, var='updraft_helic
     probdat = Dataset(probpath)
 
     # Choose correct indices based on variable and threshold
-    probinds = {'reflectivity' : {40 : 0},
+    probinds = {'reflectivity' : {40 : 0, 50 : 5},
                 'updraft_helicity' : {25 : 1, 40 : 2, 100 : 3},
                 'wind_speed' : {40 : 4}}
 
@@ -763,7 +763,7 @@ def ReliabilityRbox(probpath, runinitdate, fhr,  rboxpath, obpath=None,
     probdat = Dataset(probpath)
 
     # Choose correct indices based on variable and threshold
-    probinds = {'reflectivity' : {40 : 0},
+    probinds = {'reflectivity' : {40 : 0, 50 : 5},
                 'updraft_helicity' : {25 : 1, 40 : 2, 100 : 3},
                 'wind_speed' : {40 : 4}}
 
@@ -910,7 +910,7 @@ def scipyReliabilityRbox(probpath, runinitdate, fhr,  rboxpath,
     probdat = Dataset(probpath)
 
     # Choose correct indices based on variable and threshold
-    probinds = {'reflectivity' : {40 : 0},
+    probinds = {'reflectivity' : {40 : 0, 50 : 5},
                 'updraft_helicity' : {25 : 1, 40 : 2, 100 : 3},
                 'wind_speed' : {40 : 4}}
 
@@ -1090,7 +1090,7 @@ def calc_subset_avg_response_rbox(member_list, rvalues_ncfile, rfuncstr):
     """
     ds = xr.open_dataset(rvalues_ncfile)
     rfunc_vals = ds[rfuncstr].values
-    return np.nanmean(rfunc_vals[member_list-1])
+    return np.nanmean(rfunc_vals[np.asarray(member_list, dtype=int)-1])
 
 def calc_refl_max_rbox(gridradfiles, rboxpath, zlev):
     """
@@ -1131,14 +1131,14 @@ def calc_refl_max_rbox(gridradfiles, rboxpath, zlev):
         refl_tmp = np.nanmax(dat.values[i,zlev][mask])
         if refl_tmp > refl_max:
             refl_max = refl_tmp
-    reflmaxind = np.where(dat.values == refl_max)
-    meshlats, meshlons = np.meshgrid(lats, lons)
-    reflmax_lon = meshlons[reflmaxind[2:]][0]
-    reflmax_lat = meshlats[reflmaxind[2:]][0]
+    # reflmaxind = np.where(dat.values == refl_max)
+    # meshlats, meshlons = np.meshgrid(lats, lons)
+    # reflmax_lon = meshlons[reflmaxind[2:]][0]
+    # reflmax_lat = meshlats[reflmaxind[2:]][0]
 
-    return refl_max, reflmax_lat, reflmax_lon
+    return refl_max
 
-def calc_refl_cov_rbox(gridradfiles, rboxpath, zlev, refl_thresh):
+def calc_refl_cov_rbox(interpgridradfiles, rboxpath, zlev, refl_thresh):
     """
     Calculates the reflectivity coverage (in number of grid points)
     over a given response box. This function is meant to be used to
@@ -1147,7 +1147,71 @@ def calc_refl_cov_rbox(gridradfiles, rboxpath, zlev, refl_thresh):
 
     Inputs
     ------
-    gridradfiles ---------- absolute path to interpolated GridRad file
+    interpgridradfiles ---- absolute path to original GridRad file
+    rboxpath -------------- absolute path to sensitivity input file for
+                            sensitivity calculations that contains the
+                            response box bounds
+    zlev ------------------ zero-based integer describing which altitude
+                            level to pull reflectivity data from
+    refl_thresh ----------- float describing reflectivity threshold to
+                            calculate coverage with
+
+    Outputs
+    -------
+    returns the response box reflectivity coverage as an integer
+    as well as the number of grid points in the response box
+    """
+    # Read response box bounds
+    esensin = np.genfromtxt(rboxpath)
+    rbox_bounds = esensin[4:8]
+
+    # Read data
+    dats = [xr.open_dataset(file) for file in interpgridradfiles]
+    print(dats[0])
+    time = [dats[0].STARTDATE]
+    lats = dats[0]["XLAT"][0]
+    lons = dats[0]["XLONG"][0]
+    refl = dats[0]["GridRad_Refl"].values
+    dat = xr.DataArray(refl)#, coords=[time, lats, lons],
+                        #dims=['times', 'latitude', 'longitude'])
+    dat.name = "Reflectivity"
+    for i in range(1,len(dats)):
+        # Pull reflectivity information
+        ds = dats[i]
+        time = [ds.STARTDATE]
+        lats = ds["XLAT"][0]
+        lons = ds["XLONG"][0]
+        refl = ds["GridRad_Refl"].values
+        da = xr.DataArray(refl)#, coords=[time, lats, lons],
+                                #dims=['times', 'latitude', 'longitude'])
+        da.name = "Reflectivity"
+        dat = xr.concat([dat, da], dim='times')
+
+    # Build rbox mask
+    lonmask = (lons >= rbox_bounds[0]) & (lons < rbox_bounds[1])
+    latmask = (lats >= rbox_bounds[2]) & (lats < rbox_bounds[3])
+    mask = latmask & lonmask
+
+    # Capture grid points where reflectivity exceeds threshold
+    refl_cov = 0
+    for i in range(len(dat.values)):
+        refl_rbox = dat.values[i,zlev][mask]
+        refl_exceeds = refl_rbox[refl_rbox > refl_thresh]
+        refl_cov += len(refl_exceeds)
+    npts_rbox = len(refl_rbox)
+
+    return refl_cov, npts_rbox
+
+def calc_og_refl_cov_rbox(gridradfiles, rboxpath, zlev, refl_thresh):
+    """
+    Calculates the reflectivity coverage (in number of grid points)
+    over a given response box. This function is meant to be used to
+    verify ESA-based subsets that use reflectivity coverage as their
+    response function.
+
+    Inputs
+    ------
+    gridradfiles ---------- absolute path to original GridRad file
     rboxpath -------------- absolute path to sensitivity input file for
                             sensitivity calculations that contains the
                             response box bounds

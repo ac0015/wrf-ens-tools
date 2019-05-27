@@ -225,7 +225,10 @@ class Sens:
                      3 : "Avg UH", 4 : "Max UH",
                      5 : "Accum PCP", 6 : "Avg Wind Spd",
                      7 : "UH Coverage", 8 : "Refl Coverage"}
-        self._rfuncstr = rfuncstrs[index]
+        if self._sixhr:
+            self._rfuncstr = "6-hr " + rfuncstrs[index]
+        else:
+            self._rfuncstr = "1-hr " + rfuncstrs[index]
 
     def setSixHour(self, sixhr):
         """

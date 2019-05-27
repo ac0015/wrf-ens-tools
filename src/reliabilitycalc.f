@@ -76,12 +76,13 @@ c$$$ Determine probability index with the chosen prob variable
         elseif (variable .eq. "reflectivity") then
            if (thresh .eq. 40) then
               probvarind = 1
-           endif
-        elseif (variable .eq. "wind_speed") then
-           if (thresh .eq. 40) then
+           elseif (thresh .eq. 50) then
               probvarind = 5
            endif
         endif
+
+        print*, "reliability of", variable, ">", thresh
+        print*, probvarind
 
 c$$$ Open probability file for reference information
 
@@ -139,6 +140,7 @@ c$$$ Open obs file and grab binary obs
           print*, "WARNING - OBSERVATION FILE FORECAST HOUR",
      &    " DOESN'T MATCH INPUT FORECAST HOUR!"
         endif
+        print*, "Prob variable index", probvarind
 c        rcode = nf_inq_varid(iunitob,obvar,obid)
 c        rcode = nf_get_var_real(iunitob,obid,obs)
         call get_variable3d(iunitob,obvar,mix-1,
@@ -219,6 +221,8 @@ c                             print*, "Ob", obs(iii,jjj)
          enddo
          ob_hit_rate(p) = ob_hit_rate(p) / fcst_freq(p)
         enddo
+        print*, "Max ob hit rate", MAXVAL(ob_hit_rate)
+        print*, "Max fcst freq", MAXVAL(fcst_freq)
 
 c$$$ Write results to file
         rcode = nf_create(outfile, nf_clobber, fidc)

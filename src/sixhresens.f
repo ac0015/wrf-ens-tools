@@ -1046,7 +1046,7 @@ c$$     &     rjx-1,rkx,0,phb)
 c$$      call get_variable3d(iunitread,'T',rix-1,
 c$$     &     rjx-1,rkx-1,1,t)
       call get_variable3d(iunitread,'REFL_10CM',rix-1,
-     &     rjx-1,rkx-1,1,dbznext)
+     &     rjx-1,rkx-1,13,dbznext)
       call get_variable2d(iunitread,'UP_HELI_MAX',rix-1,
      &     rjx-1,1,uhnext)
 c$$      call get_variable2d(iunitread,'MU',rix-1,
@@ -1165,7 +1165,7 @@ c$$     &     rjx-1,rkx,0,phbnext)
 c$$      call get_variable3d(iunitread,'T',rix-1,
 c$$     &     rjx-1,rkx-1,1,tnext)
       call get_variable3d(iunitread,'REFL_10CM',rix-1,
-     &     rjx-1,rkx-1,1,dbznext)
+     &     rjx-1,rkx-1,13,dbznext)
       call get_variable2d(iunitread,'UP_HELI_MAX',rix-1,
      &     rjx-1,1,uhnext)
 c$$      call get_variable2d(iunitread,'MU',rix-1,
@@ -1787,7 +1787,7 @@ C$$$ Increment 6-h Avg sim dBZ
 
           do i=is,ie
              do j=js,je
-                         dbzavg=dbzavg+dbzresponse(i,j,1)
+                         dbzavg=dbzavg+dbzresponse(i,j,13)
              enddo
           enddo
 
@@ -2428,14 +2428,14 @@ C$$$ Avg sim dBZ
 
       do i=is,ie
          do j=js,je
-            dbzavgMEM=dbzavgMEM+dbzresponse(i,j,1)
+            dbzavgMEM=dbzavgMEM+dbzresponse(i,j,13)
          enddo
       enddo
 
 C$$$ Max dBZ
 
       if (MAXVAL(dbzresponse(is:ie,js:je,1)) > dbzmaxMEM) then
-          dbzmaxMEM=MAXVAL(dbzresponse(is:ie,js:je,1))
+          dbzmaxMEM=MAXVAL(dbzresponse(is:ie,js:je,13))
       end if
 
 C$$$ Avg uphel
@@ -2477,7 +2477,7 @@ c$$$ UH Coverage
       uhcovMEM=uhcovMEM+npts
 
 c$$$ DBZ Coverage
-      npts = COUNT((dbzresponse(is:ie,js:je,1) .GT. dbzthresh))
+      npts = COUNT((dbzresponse(is:ie,js:je,13) .GT. dbzthresh))
       dbzcovMEM=dbzcovMEM+npts
       print*,"Number of points in rbox exceeding dbz threshold for mem"
       print*, npts

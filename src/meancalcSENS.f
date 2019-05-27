@@ -5,7 +5,7 @@ c$$$ module_netcdf.f and module_wrf_tools.f if the .mod files don't exist)
 c$$$ Also, remove meancalc before compiling with Makefile
 
 c$$$ This program uses the modules to read data from WRF files,
-c$$$ calculates means, and writes them back to a 
+c$$$ calculates means, and writes them back to a
 c$$$ new WRF file for plotting with RIP and for use with other
 c$$$ programs.  Need to copy a single ens member into SENSmean.out
 c$$$ before running this program.
@@ -141,8 +141,8 @@ c$$$ Initialize constants
 
       call open_file(infileinfo,permissr,iunitinfo)
 c$$      numtimes = get_dimlen(iunitinfo,'Time')
-c$$   Pull 14 time steps such that sens time can be 1-14
-      numtimes=14
+c$$   Pull 19 time steps such that sens time can be 1-19
+      numtimes=19
       rcode = nf_get_att_int(iunitinfo, nf_global,
      &                    'WEST-EAST_GRID_DIMENSION', mix)
       rcode = nf_get_att_int(iunitinfo, nf_global,
@@ -190,10 +190,10 @@ c$$$ Beginning of loop through each time
       allocate(u10(mix-1,mjx-1))
       allocate(v10(mix-1,mjx-1))
       allocate(qvapor(mix-1,mjx-1,mkx-1))
-      allocate(qrain(mix-1,mjx-1,mkx-1))      
+      allocate(qrain(mix-1,mjx-1,mkx-1))
       allocate(qcloud(mix-1,mjx-1,mkx-1))
       allocate(qice(mix-1,mjx-1,mkx-1))
-      allocate(qsnow(mix-1,mjx-1,mkx-1))      
+      allocate(qsnow(mix-1,mjx-1,mkx-1))
       allocate(qgraup(mix-1,mjx-1,mkx-1))
       allocate(sst(mix-1,mjx-1))
       allocate(rainnc(mix-1,mjx-1))
@@ -230,10 +230,10 @@ c$$$ Beginning of loop through each time
       allocate(u10next(mix-1,mjx-1))
       allocate(v10next(mix-1,mjx-1))
       allocate(qvapornext(mix-1,mjx-1,mkx-1))
-      allocate(qrainnext(mix-1,mjx-1,mkx-1))      
+      allocate(qrainnext(mix-1,mjx-1,mkx-1))
       allocate(qcloudnext(mix-1,mjx-1,mkx-1))
       allocate(qicenext(mix-1,mjx-1,mkx-1))
-      allocate(qsnownext(mix-1,mjx-1,mkx-1))      
+      allocate(qsnownext(mix-1,mjx-1,mkx-1))
       allocate(qgraupnext(mix-1,mjx-1,mkx-1))
       allocate(sstnext(mix-1,mjx-1))
       allocate(rainncnext(mix-1,mjx-1))
@@ -256,7 +256,7 @@ c$$$ Beginning of loop through each time
       print*, cc
       infile = (/ 'mem1/SENS1_' // trim(adjustl(time)) // '.out',
      &     'mem2/SENS2_' // trim(adjustl(time)) // '.out',
-     &     'mem3/SENS3_' // trim(adjustl(time)) // '.out',   
+     &     'mem3/SENS3_' // trim(adjustl(time)) // '.out',
      &     'mem4/SENS4_' // trim(adjustl(time)) //'.out',
      &     'mem5/SENS5_' // trim(adjustl(time)) //'.out',
      &     'mem6/SENS6_' // trim(adjustl(time)) //'.out',
@@ -374,7 +374,7 @@ c$$     &     mjx-1,mkx-1,0,icenum)
 
 c$$$ Read in all other ens members, summing data for mean
       do m=2,ensnum
-      
+
       print*,infile(m)
 
       call open_file(infile(m),permissr,iunitread)
@@ -445,7 +445,7 @@ c$$     &     mjx-1,mkx-1,0,rainnumnext)
 c$$      call get_variable3d(iunitread,'QNICE',mix-1,
 c$$     &     mjx-1,mkx-1,0,icenumnext)
 
-      call close_file(iunitread)      
+      call close_file(iunitread)
       print*,'got all vars for member'
       print*,m
 
@@ -589,5 +589,3 @@ c$$$ End of loop through times
       print*, "Done"
 
       end
-
-

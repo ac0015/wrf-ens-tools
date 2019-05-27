@@ -766,6 +766,7 @@ def storeReliabilityRboxFortran(basedir, fcsthr, probpath, obpath, outfile,
         subprocess_cmd("rm {}".format(outfile))
         print("Removed old reliability output file...")
     print("Running reliability arguments...")
+    print("Directory:", package_dir)
     subprocess_cmd("{}/reliabilitycalc <{}/reliability.in \
                     >{}reliability.out".format(package_dir, basedir, basedir))
     return
