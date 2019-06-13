@@ -285,15 +285,22 @@ def plotPracPerf(runinitdate, sixhr, rtime, sigma=2, outpath='pperf.png'):
 
 def plotProbs(probpath, wrfrefpath, rbox, time, nbrhd, outpath='', subset=False):
     '''
-    Plots 1-hr probabilities for a specified time for each response
-    function (fullens and subset) and overlays the response
+    Plots probabilities for a specified time for each response
+    function (fullens and subset) given a probpath with all 
+    variables stored correctly in 'P_HYD' and overlays the response
     function box. Only supports 1-hr prob files, as it needs
     the SLP and 10m Wind means to plot.
 
     Inputs
     ------
     probpath ---- string specifying relative or absolute file
-                    path of probability netCDF file.
+                    path of probability netCDF file that contains
+                    probabilities like so:
+                    P_HYD: index
+                    0 - Refl > 40
+                    1 - UH > 25
+                    2 - UH > 40
+                    3 - UH > 100
     wrfrefpath -- string specifying relative or absolute file
                     path for an inner domain WRF reference file.
     rbox -------- tuple of floats with resbonse box bounds in the

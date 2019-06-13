@@ -373,7 +373,7 @@ def horiz_interp_and_store_gridrad(gridrad_file, interpto_file, out_file,
     nc_out.close()
     return
 
-def plot_interp_refl_rbox(gridrad_interpfile, rboxpath):
+def plot_interp_refl_rbox(gridrad_interpfile, rboxpath, analysistime):
     """
     Plot interpolated GridRad data and within and around
     response box.
@@ -384,6 +384,9 @@ def plot_interp_refl_rbox(gridrad_interpfile, rboxpath):
                             data
     rboxpath -------------- absolute path to input file for sensitivity
                             code that contains response box bounds
+    analysistime -------------- first analysis hour contained within
+                            interpolated file as a string of
+                            the form 'YYYYMMDDHH'
 
     Outputs
     -------
@@ -396,7 +399,6 @@ def plot_interp_refl_rbox(gridrad_interpfile, rboxpath):
 
     # Read interpolated radar data
     dat = Dataset(gridrad_interpfile)
-    analysistime = dat.STARTDATE
     refl = dat.variables["GridRad_Refl"][:]
     lons = dat.variables["XLONG"][0]
     lats = dat.variables["XLAT"][0]

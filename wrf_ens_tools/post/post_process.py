@@ -878,7 +878,7 @@ def plot_refl_rbox(gridradfiles, rboxpath, zlev):
     ax.set_extent([llon-10.0, ulon+10.0, llat-5.0, ulat+5.0])
 
     for i in range(len(dat.values)):
-        endtime_minus_nhrs = len(dat.values) - i
+        endtime_minus_nhrs = len(dat.values)-1 - i
         time = str(datetime.strptime(dat.Analysis_Endtime, "%Y-%m-%d %H:%M:%SZ") + \
                 timedelta(hours=-1*endtime_minus_nhrs)).replace(" ", "_")
         print("Plotting GridRad data for", time)
