@@ -20,6 +20,7 @@ from wrf_ens_tools.post import process_wrf, postTTUWRFanalysis
 from netCDF4 import Dataset
 from profilehooks import profile
 import xarray as xr
+import time
 
 package_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -857,6 +858,7 @@ class Subset:
                             variable="updraft_helicity",
                             rthresh=self._thresh, nbrhd=self._nbr,
                             wrfrefpath=S.getRefFileD2())
+                time.sleep(.300)
                 print(i)
                 success = checkSuccess()
                 i += 1
@@ -921,6 +923,7 @@ class Subset:
                                 variable="updraft_helicity",
                                 rthresh=self._thresh, nbrhd=self._nbr,
                                 wrfrefpath=S.getRefFileD2())
+                    time.sleep(.300)
                     success = checkSuccess()
                 fens_reliability = xr.open_dataset(outrel)
                 prob_bins = fens_reliability["prob_bins"]
@@ -963,6 +966,7 @@ class Subset:
                             variable="updraft_helicity",
                             rthresh=self._thresh, nbrhd=self._nbr,
                             wrfrefpath=S.getRefFileD2())
+                time.sleep(.300)
                 success = checkSuccess()
             fens_reliability = xr.open_dataset(outrel)
             prob_bins = fens_reliability["prob_bins"]
@@ -1084,6 +1088,7 @@ class Subset:
                             rthresh=self._thresh, nbrhd=self._nbr,
                             wrfrefpath=S.getRefFileD2())
                 print(i)
+                time.sleep(.300)
                 success = checkSuccess()
                 i += 1
             # Process result with xarray
@@ -1148,6 +1153,7 @@ class Subset:
                                 variable="reflectivity",
                                 rthresh=self._thresh, nbrhd=self._nbr,
                                 wrfrefpath=S.getRefFileD2())
+                    time.sleep(.300)
                     success = checkSuccess()
                 fens_reliability = xr.open_dataset(outrel)
                 prob_bins = fens_reliability["prob_bins"]
@@ -1190,6 +1196,7 @@ class Subset:
                             variable="reflectivity",
                             rthresh=self._thresh, nbrhd=self._nbr,
                             wrfrefpath=S.getRefFileD2())
+                time.sleep(.300)
                 success = checkSuccess()
             fens_reliability = xr.open_dataset(outrel)
             prob_bins = fens_reliability["prob_bins"]
