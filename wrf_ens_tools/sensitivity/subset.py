@@ -14,9 +14,9 @@ from wrf_ens_tools.post import fromDatetime, interpRAPtoWRF, subprocess_cmd
 from wrf_ens_tools.post import storeReliabilityRboxFortran
 from wrf_ens_tools.post import storeNearestNeighborFortran
 from wrf_ens_tools.plots import plotProbs, plotDiff, plotSixPanels
-from wrf_ens_tools.calc import FSS, scipyReliabilityRbox, ReliabilityRbox
+from wrf_ens_tools.calc import FSS, scipyReliabilityRbox, ReliabilityRbox, rmse
 from wrf_ens_tools.calc import calc_refl_cov_rbox, calc_refl_max_rbox, calc_subset_avg_response_rbox
-from wrf_ens_tools.post import process_wrf, postTTUWRFanalysis
+from wrf_ens_tools.post import process_wrf, postTTUWRFanalysis, postIdealizedAnalysis
 from netCDF4 import Dataset
 from profilehooks import profile
 import xarray as xr
@@ -37,7 +37,8 @@ class Subset:
     def __init__(self, sens=Sens(), subset_size=21, subset_method='percent',
                  percent=70., sensvalfile="SENSvals.nc", nbrhd=32.1869, thresh=25.,
                  sensvars=['500_hPa_GPH', '700_hPa_T', '850_hPa_T', 'SLP'],
-                 analysis_type="RAP", wrfanalysis_to_post_path=None):
+                 analysis_type="RAP", wrfanalysis_to_post_path=None,
+                 idealized=False, truth_member=1):
         """
         Constructor for an instance of the Subset class.
 
@@ -82,6 +83,7 @@ class Subset:
         self._sensvars = sensvars
         self._thresh = thresh
         self._nbr = nbrhd
+        self._idealized = idealized
         # Only need this if you need to post-process an analysis file
         #  and not using RAP
         self._wrfpath_to_post_proc = wrfanalysis_to_post_path
@@ -108,6 +110,8 @@ class Subset:
         # Define analysis file path
         self._sensdate = sens.getRunInit() + timedelta(hours=sens.getSensTime())
         yr, mo, day, hr = fromDatetime(self._sensdate, interp=True)
+        if self._idealized:
+            self._truth_member = truth_member
         self._analysis_type = analysis_type
         if self._analysis_type.upper() == "RAP":
             self._analysis = "{}RAP_interp_to_WRF_{}{}{}{}.nc".format(sens.getDir(),
@@ -128,11 +132,14 @@ class Subset:
         return "Subset object with full ensemble of {} members, subset size of {}, \nand " \
                "using the {} subsetting method with a threshold of {}, \nneighborhood of {}, " \
                "response threshold of {} and these sensitivity variables: {}. \nUsing {} " \
-               "analysis for subsetting. \n\nBased on Sens object: \n {}".format(self._sens.getEnsnum(),
+               "analysis for subsetting. Idealized experiment = {} " \
+               "\n\nBased on Sens object: \n {}".format(self._sens.getEnsnum(),
                                                     self._subsize, self._method, str(self._percent),
                                                     str(self._nbr), str(self._thresh),
                                                     ','.join(self.getSensVars()),
-                                                    str(self._analysis), str(self.getSens()))
+                                                    str(self._analysis),
+                        str(self._idealized) if self._idealized==False else str(self._idealized)+"; Truth Member: {}".format(self._truth_member),
+                                                    str(self.getSens()))
 
     def setSubsetMethod(self, subset_method):
         """
@@ -223,6 +230,9 @@ class Subset:
         """
         if half_post_processed:
             postTTUWRFanalysis(self._wrfpath_to_post_proc, self._analysis)
+        elif self._idealized:
+            postIdealizedAnalysis(self._sensvalfile, self._analysis,
+                                self._truth_member)
         else:
             # Use default vars for process_wrf and default naming conventions.
             process_wrf(self._wrfpath_to_post_proc, outpath=self._analysis, reduced=True)
@@ -1214,5 +1224,96 @@ class Subset:
                     format="NETCDF4", mode='w')
         os.rename("test.nc", outpath)
         ds.close()
+
+        return
+
+    def idealizedStoreRfuncStatsNetCDF(self, outpath, rvalspath="Rvals.nc"):
+        """
+        Stores response function verification stats for an idealized experiment
+        in which a randomly selected ensemble member serves as truth and is
+        used to compute response errors directly.
+
+        Inputs
+        ------
+        outpath ----------- absolute output filepath as a string
+        rvalspath --------- name of netCDF file produced from
+                            sixhresens that stores member response values
+
+        Outputs
+        -------
+        returns NULL and stores UH verification stats to outpath as netCDF4
+        """
+        if self._idealized:
+            S = self.getSens()
+            rstring_to_rindex = {"6-hr Max UH": "UH_MAX",
+                                 "6-hr UH Coverage": "UH_COV",
+                                 "6-hr Max Refl": "DBZ_MAX",
+                                 "6-hr Refl Coverage": "DBZ_COV"}
+            truthmem_ind = self._truth_member - 1
+            # Create entry as xarray dataset
+            sens_vars = np.empty((1, 30), dtype="U30")
+            sens_vars[0, :len(self._sensvars)] = np.asarray(self._sensvars[:])
+            sub_mems = np.zeros((1,len(self._fullens)), dtype=int) * np.NaN
+            sub_mems[0, :len(self.getSubMembers())] = np.asarray(self.getSubMembers())
+            # Pull member response values
+            rvals_dat = Dataset(S.getDir() + rvalspath)
+            truth_rval = rvals_dat[rstring_to_rindex[S.getRString()]][truthmem_ind]
+            subRMS = np.zeros((self._subsize))
+            fensRMS = np.zeros_like(self._fullens)
+            print(truth_rval)
+            print("CALCULATING SUBSET MEMBER RMSE'S...")
+            print(self.getSubMembers())
+            print(rstring_to_rindex[S.getRString()])
+            sub_rvals_spread = np.var(rvals_dat.variables[rstring_to_rindex[S.getRString()]][self.getSubMembers()-1])
+            fens_rvals_spread = np.var(rvals_dat.variables[rstring_to_rindex[S.getRString()]][:])
+            for ind, submem in enumerate(self.getSubMembers()):
+                rval = rvals_dat.variables[rstring_to_rindex[S.getRString()]][submem-1]
+                print(submem-1, rval)
+                subRMS[ind] = rmse(predictions=rval, targets=truth_rval)
+            print("Subset Mean RMSE:", np.mean(subRMS))
+            print("CALCULATING FULL ENS MEMBER RMSE'S...")
+            for ind, fensmem in enumerate(self._fullens):
+                rval = rvals_dat.variables[rstring_to_rindex[S.getRString()]][fensmem-1]
+                print(fensmem-1, rval)
+                fensRMS[ind] = rmse(predictions=rval, targets=truth_rval)
+            print("Full Ens Mean RMSE:", np.mean(fensRMS))
+
+            ds = xr.Dataset({'Sens_Time': (['subset'], np.atleast_1d(S.getSensTime())),
+                     'Subset_Size': (['subset'], np.atleast_1d(self._subsize)),
+                     'Sens_Vars':  (['subset', 'sensvar'],
+                                    np.atleast_2d(sens_vars)),
+                     'Subset_Method': (['subset'],
+                        np.atleast_1d(list(self._methodchoices.keys())[self._method-1])),
+                     'Sens_Threshold': (['subset'], np.atleast_1d(self._percent)),
+                     'Response_Func': (['subset'], np.atleast_1d(S.getRString())),
+                     'Response_Time': (['subset'], np.atleast_1d(S.getRTime())),
+                     'Response_Box': (['subset', 'rbox'],
+                                        np.atleast_2d(S.getRbox())),
+                     'Full_Ens_RMSE_Rbox': (['subset'], np.atleast_1d(np.mean(fensRMS))),
+                     'Full_Ens_Response_Spread': (['subset'], np.atleast_1d(fens_rvals_spread)),
+                     'Subset_RMSE_Rbox': (['subset'], np.atleast_1d(np.mean(subRMS))),
+                     'Subset_Response_Spread': (['subset'], np.atleast_1d(sub_rvals_spread)),
+                     'Subset_RMSE_Diff': (['subset'], np.atleast_1d(np.mean(subRMS)-np.mean(fensRMS))),
+                     'Neighborhood': (['subset'], np.atleast_1d(self._nbr)),
+                     'Response_Thresh': (['subset'], np.atleast_1d(self._thresh)),
+                     'Subset_Members': (['subset', 'submems'],
+                                        sub_mems)},
+                     coords={'run': S.getRunInit(),
+                             # 'subset': np.arange(1),
+                             'rbox': ['llon', 'ulon', 'llat', 'ulat']})
+            if os.path.exists(outpath):
+                og_ds = xr.open_dataset(outpath)
+                print("Opened original dataset...")
+                ds = xr.concat([og_ds, ds], dim='subset', data_vars='minimal')
+                og_ds.close()
+                print("Appended new dataset to original dataset...\n\n", ds)
+            print("FINAL DATASET TO WRITE:", ds)
+            ds.to_netcdf("test.nc", unlimited_dims=['subset', 'rthresh'],
+                        format="NETCDF4", mode='w')
+            os.rename("test.nc", outpath)
+            ds.close()
+        else:
+            print("ERROR! Attempt to run idealized experiment with a real subset obj")
+            raise
 
         return
