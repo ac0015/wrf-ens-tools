@@ -448,11 +448,54 @@ def dist_mask(xind, yind, xpts, ypts, r):
 # Begin verification metrics
 #############################################################
 
-def FSS(probpath, obspath, fhr, var='updraft_helicity',
+def FSS(fcstprobarray, obarray):
+    """
+    Calculates fractions skill score for a probabilstic
+    ensemble forecast, Obs need to be pre-interpolated
+    to native model grid.
+
+    Inputs
+    ------
+    fcstprobarray ----- 2-D array-like that contains forecast
+                        to be verified.
+    obarray ----------- 2-D array-like that contains observations
+                        to verify fcstprobarray with. Should be same
+                        shape as fcstprobarray.
+
+    Outputs
+    -------
+    returns fss as a float
+    """
+    # First calculate FBS (Fractions Brier Score) on whole grid
+    probs = fcstprobarray
+    obs = obarray
+    npts = len(fcstprobarray[:,0]) * len(fcstprobarray[0,:])
+    fbs = 0.
+    fbs_worst = 0.
+    print('Max ens probs and max ob probs: ', np.max(probs), np.max(obs))
+
+    # Calculate FBS at each grid point and aggregate.
+    if (np.max(obs) > 0.) or (np.max(probs) > 0.):
+        for i in range(len(fcstprobarray[0,:])):
+            for j in range(len(fcstprobarray[:,0])):
+                fbs += (probs[j,i] - obs[j,i])**2
+                fbs_worst += probs[j,i]**2 + obs[j,i]**2
+        print('FBS: ', fbs)
+        fbs, fbs_worst = fbs/npts, fbs_worst/npts
+        # Use FBS and FBS worst to calculate FSS for whole grid
+        fss = 1 - (fbs/fbs_worst)
+        print("FSS and num points: ", fss, ',', npts)
+    else:
+        print('NULL time/case, cannot calculate FSS')
+
+    return fss
+
+def FSSnetcdf(probpath, obspath, fhr, var='updraft_helicity',
         thresh=25., rboxpath=None):
     """
     Calculates fractional skill score for a probabilstic
-    ensemble forecast, Obs need to be pre-interpolated
+    ensemble forecast from probability and observation
+    files. Obs need to be pre-interpolated
     to native model grid.
 
     Inputs

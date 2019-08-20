@@ -23,7 +23,7 @@ import matplotlib.patches as patches
 import cartopy.crs as ccrs
 import cartopy.feature as cfeat
 from .interp_analysis import subprocess_cmd, reflectivity_to_eventgrid
-import pyart
+# import pyart
 import os
 from shutil import copyfile
 
