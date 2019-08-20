@@ -1057,17 +1057,32 @@ class Subset:
                 dbz_ob = calc_refl_max_rbox(gridradfiles=og_gridradfiles,
                                             rboxpath=S.getDir()+'esens.in',
                                             zlev=0)
-            fens_avg_rval_rbox = calc_subset_avg_response_rbox(member_list=self._fullens,
-                                        rvalues_ncfile=rvalspath,
-                                        rfuncstr=resp)
-            sub_avg_rval_rbox = calc_subset_avg_response_rbox(member_list=self._subset,
-                                        rvalues_ncfile=rvalspath,
-                                        rfuncstr=resp)
-            print("Full Ensemble Average {} Rbox: {}".format(resp, fens_avg_rval_rbox))
-            print("Subset Average {} Rbox: {}".format(resp, sub_avg_rval_rbox))
+            # fens_avg_rval_rbox = calc_subset_avg_response_rbox(member_list=self._fullens,
+            #                             rvalues_ncfile=rvalspath,
+            #                             rfuncstr=resp)
+            # sub_avg_rval_rbox = calc_subset_avg_response_rbox(member_list=self._subset,
+            #                             rvalues_ncfile=rvalspath,
+            #                             rfuncstr=resp)
+            # print("Full Ensemble Average {} Rbox: {}".format(resp, fens_avg_rval_rbox))
+            # print("Subset Average {} Rbox: {}".format(resp, sub_avg_rval_rbox))
+            rstring_to_rindex = {"6-hr Max Refl": "DBZ_MAX",
+                                 "6-hr Refl Coverage": "DBZ_COV"}
+            rvals_dat = xr.open_dataset(rvalspath)
+            sub_mae = np.zeros_like(self.getSubMembers())
+            fens_mae = np.zeros_like(self._fullens)
+            # Calculate MAE for each subset member
+            for ind, mem in enumerate(self.getSubMembers()):
+                print("Subset Member:", mem)
+                mem_rval = rvals_dat[rstring_to_rindex[S.getRString()]][mem-1]
+                sub_mae[ind] = abs(mem_rval - dbz_ob)
+            # Calculate MAE for each full ensemble member
+            for ind, fens_mem in enumerate(self._fullens):
+                print("Full Ens Mem:", fens_mem)
+                mem_rval = rvals_dat[rstring_to_rindex[S.getRString()]][fens_mem-1]
+                fens_mae = abs(mem_rval - dbz_ob)
             print("{} Observation Rbox: {}".format(resp, dbz_ob))
-            fens_abs_err = abs(fens_avg_rval_rbox - dbz_ob)
-            sub_abs_err = abs(sub_avg_rval_rbox - dbz_ob)
+            fens_abs_err = np.mean(fens_mae)
+            sub_abs_err = np.mean(sub_mae)
             print("Subset {} error: {}".format(S.getRString(), sub_abs_err))
             print("Full Ensemble {} error: {}".format(S.getRString(), fens_abs_err))
 
@@ -1250,36 +1265,44 @@ class Subset:
                                  "6-hr Max Refl": "DBZ_MAX",
                                  "6-hr Refl Coverage": "DBZ_COV"}
             truthmem_ind = self._truth_member - 1
+            # Open member response values
+            rvals_dat = Dataset(S.getDir() + rvalspath)
             # Create entry as xarray dataset
             sens_vars = np.empty((1, 30), dtype="U30")
             sens_vars[0, :len(self._sensvars)] = np.asarray(self._sensvars[:])
             sub_mems = np.zeros((1,len(self._fullens)), dtype=int) * np.NaN
-            sub_mems[0, :len(self.getSubMembers())] = np.asarray(self.getSubMembers())
-            # Pull member response values
-            rvals_dat = Dataset(S.getDir() + rvalspath)
+            sub_mems[0, :len(self.getSubMembers())-1] = np.asarray(self.getSubMembers())[self.getSubMembers() != self._truth_member]
+            assert(self.getSubMembers()[0] == self._truth_member)
             truth_rval = rvals_dat[rstring_to_rindex[S.getRString()]][truthmem_ind]
-            subRMS = np.zeros((self._subsize))
-            fensRMS = np.zeros_like(self._fullens)
+            # Make sure to ignore truth member in error calculations
+            # Truth member inclusion in subset gives the subset unfair advantage
+            subRMS = np.zeros((self._subsize-1))
+            fensRMS = np.zeros_like(self._fullens[self._fullens != self._truth_member])
+            print(subRMS.shape, fensRMS.shape)
             print(truth_rval)
             print("CALCULATING SUBSET MEMBER RMSE'S...")
             print(self.getSubMembers())
             print(rstring_to_rindex[S.getRString()])
-            sub_rvals_spread = np.var(rvals_dat.variables[rstring_to_rindex[S.getRString()]][self.getSubMembers()-1])
-            fens_rvals_spread = np.var(rvals_dat.variables[rstring_to_rindex[S.getRString()]][:])
-            for ind, submem in enumerate(self.getSubMembers()):
-                rval = rvals_dat.variables[rstring_to_rindex[S.getRString()]][submem-1]
-                print(submem-1, rval)
+            responses = rvals_dat.variables[rstring_to_rindex[S.getRString()]][:]
+            # Ignore truth member in spread calculations too
+            sub_rvals_spread = np.var(responses[self.getSubMembers()[self.getSubMembers() != self._truth_member]-1])
+            fens_rvals_spread = np.var(responses[~np.in1d(range(len(responses)),truthmem_ind)])
+            # print(responses[truthmem_ind], responses[~np.in1d(range(len(responses)),truthmem_ind)])
+            for ind, submem in enumerate(self.getSubMembers()
+                                [self.getSubMembers() != self._truth_member]):
+                rval = responses[submem-1]
+                print("Member:", submem, "Response Val:", rval)
                 subRMS[ind] = rmse(predictions=rval, targets=truth_rval)
             print("Subset Mean RMSE:", np.mean(subRMS))
             print("CALCULATING FULL ENS MEMBER RMSE'S...")
-            for ind, fensmem in enumerate(self._fullens):
-                rval = rvals_dat.variables[rstring_to_rindex[S.getRString()]][fensmem-1]
-                print(fensmem-1, rval)
+            for ind, fensmem in enumerate(self._fullens[self._fullens != self._truth_member]):
+                rval = responses[fensmem-1]
+                print("Member:", fensmem, "Response Val:", rval)
                 fensRMS[ind] = rmse(predictions=rval, targets=truth_rval)
             print("Full Ens Mean RMSE:", np.mean(fensRMS))
 
             ds = xr.Dataset({'Sens_Time': (['subset'], np.atleast_1d(S.getSensTime())),
-                     'Subset_Size': (['subset'], np.atleast_1d(self._subsize)),
+                     'Subset_Size': (['subset'], np.atleast_1d(self._subsize-1)),
                      'Sens_Vars':  (['subset', 'sensvar'],
                                     np.atleast_2d(sens_vars)),
                      'Subset_Method': (['subset'],
@@ -1293,7 +1316,7 @@ class Subset:
                      'Full_Ens_Response_Spread': (['subset'], np.atleast_1d(fens_rvals_spread)),
                      'Subset_RMSE_Rbox': (['subset'], np.atleast_1d(np.mean(subRMS))),
                      'Subset_Response_Spread': (['subset'], np.atleast_1d(sub_rvals_spread)),
-                     'Subset_RMSE_Diff': (['subset'], np.atleast_1d(np.mean(subRMS)-np.mean(fensRMS))),
+                     'RMSE_Diff': (['subset'], np.atleast_1d(np.mean(subRMS)-np.mean(fensRMS))),
                      'Neighborhood': (['subset'], np.atleast_1d(self._nbr)),
                      'Response_Thresh': (['subset'], np.atleast_1d(self._thresh)),
                      'Subset_Members': (['subset', 'submems'],

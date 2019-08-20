@@ -532,7 +532,6 @@ def postIdealizedAnalysis(inpath, outpath, member,
                        "500 hPa Q", "700 hPa Q", "850 hPa Q", "925 hPa Q",
                        "SLP","2m Temp","2m Dewpt",
                        "10m U-Wind","10m V-Wind"]
-    print(len(sensval_varstrings), len(sensstringslist))
 
     # Get more dimensions/geographical info
     wrf_d1 = Dataset(refpath)
