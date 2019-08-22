@@ -23,11 +23,10 @@ import os
 import csv
 import sys
 from wrf_ens_tools.post import post_process as pp
-from profilehooks import profile
+# from profilehooks import profile
 
 package_dir =  os.path.dirname(os.path.abspath(__file__))
 
-@profile
 def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
     """
     A method which interpolates a function
@@ -742,7 +741,6 @@ def ReliabilityTotal(probpath, runinitdate, fhr, obpath=None, var='updraft_helic
 
     return prob_bins, fcstfreq_tot, ob_hr_tot
 
-@profile
 def ReliabilityRbox(probpath, runinitdate, fhr,  rboxpath, obpath=None,
                 var='updraft_helicity',
                 thresh=25.,sixhr=False, nbrhd=0.):
