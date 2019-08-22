@@ -151,7 +151,7 @@ for rfunc in rfunctions:
                         sub.interpRAP()
             del sub
             if sixhour:
-                statspath = direc + 'refl_sixhr_stats_sig1_nbr30_stime{}.nc'.format(S.getSensTime())
+                statspath = direc + 'MAEcorrected_refl_sixhr_stats_sig1_nbr30_stime{}.nc'.format(S.getSensTime())
             else:
                 statspath = direc + 'onehr_stats_sig1_nbr30.nc'
             # Get stats for different subset combos

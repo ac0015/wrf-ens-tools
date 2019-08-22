@@ -139,6 +139,7 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
     anl_missing = (anlvar >= 9e9)
     sensstrings = [sensvar.replace("_"," ") for sensvar in sensvars.copy()]
     sensmat_masked = np.ma.masked_array(sensmat, mask=(missing))
+    anl.close()
 
     try:
         print("Subset Method: ",str(method))

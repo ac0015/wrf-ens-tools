@@ -23,7 +23,7 @@ import matplotlib.patches as patches
 import cartopy.crs as ccrs
 import cartopy.feature as cfeat
 from .interp_analysis import subprocess_cmd, reflectivity_to_eventgrid
-import pyart
+# import pyart
 import os
 from shutil import copyfile
 
@@ -484,6 +484,85 @@ def postTTUWRFanalysis(inpath, outpath,
                                           dimensions=('lat','lon'))
         var[:,:] = sensvarlist[i]
     new_analysis.close()
+    return
+
+def postIdealizedAnalysis(inpath, outpath, member,
+                        refpath='/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREF'):
+    """
+    Siphons post-processed sensitivity variable values from a "SENSvals.nc" or
+    similar file produced by the sensvector executable found in the sensitivity
+    module. Stores the specified member's post-processed fields in a specified
+    outpath. Intended to be used in idealized testing experiments where one
+    ensemble member is randomly-selected to serve as truth.
+
+    Inputs
+    ------
+    inpath ------------ input path to netCDF file where post-processed member
+                        fields are stored (valid at the sensitivity time).
+                        Should be formatted as output from sensvector exec.
+    outpath ----------- output path where member sensitivity variable fields
+                        will be stored like an analysis.
+    member ------------ one-based integer specifying the ensemble member to
+                        pull from the input file.
+    refpath ----------- absolute path to reference file containing geographical
+                        data and other relevant metadata.
+
+    Outputs
+    -------
+    Returns NULL, but stores member sensitivity variable data valid at the
+    sensitivity time in the specified outpath.
+    """
+    # SENSvals file naming conventions
+    sensval_varstrings = ["GPH_300", "GPH_500", "GPH_700", "GPH_850", "SKIP",
+                            "T_300", "T_500", "T_700", "T_850", "T_925",
+                            "U_300", "U_500", "U_700", "U_850", "U_925",
+                            "V_300", "V_500", "V_700", "V_850", "V_925",
+                            "SKIP", "SKIP", "SKIP", "SKIP", "SKIP", "SKIP",
+                            "SKIP", "SKIP", "Q_850", "SKIP", "SLP", "T2",
+                            "TD2", "U10", "V10"]
+    # Post-processed new file naming conventions
+    sensstringslist = ["300 hPa GPH","500 hPa GPH","700 hPa GPH",
+                       "850 hPa GPH","925 hPa GPH","300 hPa T","500 hPa T",
+                       "700 hPa T","850 hPa T","925 hPa T","300 hPa U-Wind",
+                       "500 hPa U-Wind","700 hPa U-Wind","850 hPa U-Wind",
+                       "925 hPa U-Wind","300 hPa V-Wind","500 hPa V-Wind",
+                       "700 hPa V-Wind","850 hPa V-Wind","925 hPa V-Wind",
+                       "300 hPa Dewpt", "500 hPa Dewpt", "700 hPa Dewpt",
+                       "850 hPa Dewpt", "925 hPa Dewpt", "300 hPa Q",
+                       "500 hPa Q", "700 hPa Q", "850 hPa Q", "925 hPa Q",
+                       "SLP","2m Temp","2m Dewpt",
+                       "10m U-Wind","10m V-Wind"]
+
+    # Get more dimensions/geographical info
+    wrf_d1 = Dataset(refpath)
+    lons, lats = wrf_d1.variables['XLONG'][0], wrf_d1.variables['XLAT'][0]
+    wrf_idim = len(lons[0,:])
+    wrf_jdim = len(lats[:,0])
+
+    # Write interpolated variables to netCDF
+    new_analysis = Dataset(outpath, "w", format="NETCDF4")
+    new_analysis.createDimension('lat', wrf_jdim)
+    new_analysis.createDimension('lon', wrf_idim)
+    new_analysis.createDimension('time', None)
+    xlat = new_analysis.createVariable("XLAT", float, dimensions=('lat','lon'))
+    xlat[:,:] = lats
+    xlon = new_analysis.createVariable("XLONG", float, dimensions=('lat','lon'))
+    xlon[:,:] = lons
+
+    # Open dataset and start pulling member fields
+    member_fields = np.zeros((len(sensval_varstrings), wrf_jdim, wrf_idim))
+    sensvar_dat = Dataset(inpath)
+    for ind, var in enumerate(sensval_varstrings):
+        # print("SENSvals variable:", var, "New variable string", sensstringslist[ind])
+        if var != "SKIP":
+            member_fields[ind] = sensvar_dat[var][member-1][:]
+            newvar = new_analysis.createVariable(
+                                        sensstringslist[ind].replace(" ","_"),
+                                        member_fields[ind].dtype,
+                                        dimensions=('lat','lon'))
+            newvar[:,:] = member_fields[ind]
+    new_analysis.close()
+    return
 
 # Post-process practically perfect
 def storePracPerfNativeGrid(modelinit, fcsthrs, outpath, nbrhd, dx, sixhour=False):
