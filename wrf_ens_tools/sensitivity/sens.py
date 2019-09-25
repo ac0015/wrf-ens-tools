@@ -365,7 +365,7 @@ class Sens:
         np.savetxt(fpath, args, fmt="%s", delimiter='\n')
         return
 
-    def renameWRFOUT(self, restored=False):
+    def renameWRFOUT(self, restored=False, realtime=False):
         """
         Renames wrfout files for current ensemble run
 
@@ -374,6 +374,9 @@ class Sens:
         restored - optional boolean specifying if wrfout files
                     have been restored to their full capacity
                     from a previously reduced output file
+        realtime - optional boolean specifying if using wrfout
+                    files from realtime system (different
+                    naming convention if set to True)
 
         """
         for i in range(self._ensnum):
@@ -397,6 +400,9 @@ class Sens:
                 if restored:
                     wrfout_strs = ['{}wrfout_d0{}_red_{}-{}-{}_{}:00:00',
                                    '{}res_wrfout_d0{}_{}-{}-{}_{}:00:00']
+                elif realtime:
+                    wrfout_strs = ['{}wrfout_d0{}_{}-{}-{}_{}:00:00',
+                                   '{}wrfout_d0{}_{}-{}-{}_{}:00:00']
                 else:
                     wrfout_strs = ['{}wrfout_d0{}_red_{}-{}-{}_{}:00:00',
                                    '{}wrfout_d0{}_red_{}-{}-{}_{}:00:00']

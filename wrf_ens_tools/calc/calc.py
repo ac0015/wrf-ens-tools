@@ -413,6 +413,7 @@ def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2,
             pperf = bilinear_interp(X, Y, WRFX, WRFY, tmppperf)
             print('Min/Max Prac Perf: ', np.min(pperf), '/', np.max(pperf))
         except:
+            print("No reports to grid")
             pperf = np.zeros_like(wrflon)
 
     # Remove report CSV file
@@ -421,6 +422,137 @@ def calc_prac_perf_spc_grid(runinitdate, sixhr, rtime, sigma=2,
 
     return pperf, wrflon, wrflat
 
+def gen_surrogate_severe_reports(uh_arr, sim_refl_arr, uh_thresh,
+                                lats, lons, dx=4., spc_grid=False):
+    """
+    Generates surrogate severe reports given a UH probability array
+    and a simulated reflectivity array from the same forecast.
+
+    Inputs
+    ------
+    uh_arr ------------ 3-D array-like of deterministic updraft helicity
+                        forecast values which is structured
+                        like so: uh(time, lat, lon)
+    sim_refl_arr ------ 4-D array-like of simulated reflectivity to
+                        ensure convection is collocated with UH
+                        which is structured like so:
+                        dbz(time, zlevel, lat, lon)
+    uh_thresh --------- float to use as UH threshold for generating
+                        SSR's
+    lats -------------- 2-D latitude array-like that
+                        corresponds to uh_arr and sim_refl_arr
+                        grid
+    lons -------------- 2-D longitude array-like that
+                        corresponds to uh_arr and sim_refl_arr
+                        grid
+    dx ---------------- horizontal grid-spacing of original
+                        dataset as float in kilometers to
+                        determine reflectivity mask
+    spc_grid ---------- boolean specifying whether to re-grid SSRs
+                        to SPC 81-km grid to account for spatial
+                        disparity of typical reports
+
+    Outputs
+    -------
+    returns a 2-D binary array (containing one's in the presence of
+    an SSR and zero's otherwise)
+    """
+    # Initialize surrogate severe report array
+    ssr_arr = np.zeros_like(uh_arr[0], dtype=bool)
+
+    # For reflectivity mask
+    xinds, yinds = np.meshgrid(np.arange(len(lons[0,:])), np.arange(len(lats[:])))
+    # print(np.shape(yinds), np.shape(xinds))
+
+    # Get lats and lons for practically perfect grid
+    ppfile = '{}/pperf_grid_template.npz'.format(package_dir)
+    f = np.load(ppfile)
+    lon = f["lon"]
+    lat = f["lat"]
+    f.close()
+
+    for ind, hourly_uh_field in enumerate(uh_arr):
+        uhmask = (hourly_uh_field >= uh_thresh) # Mask out everything under thresh
+        composite_refl = np.max(sim_refl_arr[ind], axis=0) # Find max in column
+        uh_inds = np.where(uhmask == True) # Identify UH points
+        for fcstind in list(zip(uh_inds[0].ravel(), uh_inds[1].ravel())):
+            # Check each UH point for reflectivity > 35.0 dBZ
+            r = 25./dx # See Sobash et al 2011; 25-km radius and 35 dBZ
+            distmask = dist_mask(fcstind[1], fcstind[0], xinds, yinds, r)
+            if (np.asarray(composite_refl)[distmask] < 35.0).all():
+                # If no reflectivity within 25 km, negate UH point
+                uhmask[fcstind] = False
+        # SSR either stays from previous time step, or new SSR from UH/REFL
+        ssr_arr = ssr_arr | uhmask
+
+    # If accounting for spatial disparity of storm reports (more realistic),
+    #  grid reports to 81-km SPC grid
+    if spc_grid:
+        # Set up empty grid onto correct projection
+        grid = np.zeros_like(lon)
+        NDFD = pyproj.Proj("+proj=lcc +lat_1=25 +lat_2=25 +lon_0=-95 +x_0=0 +y_0=0 +"
+                           "ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+
+        # Identify SSR locations
+        ssr_loc_inds = np.where(ssr_arr == 1)
+        # print("Shape of SSR locations", np.shape(ssr_loc_inds))
+        # print("SSR location indices", ssr_loc_inds)
+        ssr_lons = lons[ssr_loc_inds]
+        ssr_lats = lats[ssr_loc_inds]
+        # print("SSR Lat/Lons", ssr_lats, ssr_lons)
+
+        # Convert lat/lon grid into projection space
+        X, Y = NDFD(lon, lat)
+        WRFX, WRFY = NDFD(lons, lats)
+
+        # Convert lat/lon reports into projection space
+        x, y = NDFD(ssr_lons, ssr_lats)
+
+        # Create KD-Tree for effecient lookup
+        gpoints = np.array(list(zip(X.ravel(), Y.ravel())))
+        gtree = sp.spatial.cKDTree(gpoints)
+
+        # Run the KD-Tree to get distances to nearest gridbox and
+        # then index of nearest grid point
+        dists, inds = gtree.query(np.array(list(zip(x, y))),
+                                  distance_upper_bound=1000000000.)
+
+        # Convert index of 1D array into index of 2D lat/lon array
+        xind, yind = np.unravel_index(inds, X.shape)
+
+        # Loop through all points and increment that grid cell by 1
+        for xi, yi in zip(xind, yind):
+            grid[xi, yi] = 1
+
+        # Overwrite SSR array as new 81-km gridded SSRs
+        ssr_arr = grid
+
+    return np.array(ssr_arr, dtype=int)
+
+def gen_SSPFs_from_SSRs(ssr_arr, sigma):
+    """
+    Generates surrogate severe probabilistic forecast from
+    gridded surrogate severe reports.
+
+    Inputs
+    ------
+    ssr_arr ------- 2-D array-like containing binary
+                    "surrogate severe reports", where
+                    a 1 indicates existance of an SSR
+                    and a 0 indicates no SSR.
+    sigma --------- float to determine the
+                    value of the gaussian smoothing
+                    parameter applied to SSRs,
+                    equivalent to:
+                    neighborhood / horiz-grid spacing
+
+    Outputs
+    -------
+    returns 2-D array-like of surrogate severe probabilities
+    based on the given SSR grid
+    """
+    return ndimage.gaussian_filter(np.array(ssr_arr, dtype=float),
+                                    sigma=sigma, order=0)
 
 def dist_mask(xind, yind, xpts, ypts, r):
     """
@@ -714,7 +846,7 @@ def ReliabilityTotal(probpath, runinitdate, fhr, obpath=None, var='updraft_helic
     lons = wrf.getvar(probdat, 'lon')
     dx = probdat.DX / 1000. # dx in km
     # Get arrays of x and y indices for distance calculations
-    yinds, xinds = np.meshgrid(np.arange(len(lons[0,:])), np.arange(len(lats[:])))
+    xinds, yinds = np.meshgrid(np.arange(len(lons[0,:])), np.arange(len(lats[:])))
 
     # Sort probabilities into bins
     fcstfreq_tot = np.zeros((len(prob_bins)))   # N probs falling into bin for whole domain
@@ -885,169 +1017,6 @@ def ReliabilityRbox(probpath, runinitdate, fhr,  rboxpath, obpath=None,
                 # ax.set_title("Fcst Frequency: {}; Ob Hit Rate: {}".format(fcstfreq_rbox[i],
                                     # ob_hr_rbox[i]))
                 # plt.savefig("slow_rel_prob{}-{}.png".format(prob-10,prob))
-
-    return prob_bins, fcstfreq_rbox, ob_hr_rbox
-
-def scipyReliabilityRbox(probpath, runinitdate, fhr,  rboxpath,
-                obpath=None, var='updraft_helicity',
-                thresh=25.,sixhr=False, nbrhd=0.):
-    """
-    Calculates reliability for a probabilstic
-    ensemble forecast and returns it. Obs
-    need to be pre-interpolated to native model grid.
-
-    Inputs
-    ------
-    probpath --- path to netCDF file containing
-                 probability values. IMPORTANT
-                 NOTE - prob file is expected to
-                 be organized like in probcalcSUBSET.f
-                  Variable P_HYD[0,i,:,:]:
-                   i         Var
-                  [0]   Refl > 40 dBZ probs
-                  [1]   UH > 25 m2/s2 probs
-                  [2]   UH > 40 m2/s2 probs
-                  [3]   UH > 100 m2/s2 probs
-                  [4]   Wind Speed > 40 mph probs
-    obpath ------ path to binary observations gridded to
-                  the native WRF domain. If set to None,
-                  will automatically calculate gridded obs.
-    runinitdate - datetime obj describing model initiation
-                  time. Used to pull correct storm reports.
-    fhr --------- integer describing response time in number
-                  of forecast hours.
-    var --------- string describing variable to verify.
-                  Only supports 'updraft_helicity'
-                  option as of right now.
-    thresh ------ float describing threshold of
-                  variable to use when
-                  pulling probs. Choices
-                  for UH are 25, 40, and 100 m2/s2.
-                  Choices for Reflectivity and
-                  Wind Speed are 40 (dbz) and
-                  40 (mph) respectively.
-    rboxpath ---- absolute path to sensitivity calc
-                  input file. Only needed if verifying
-                  subsets. Otherwise
-                  leave as None.
-    sixhr ------- option of calculating 1 hours worth
-                  or 6 hours worth of SPC storm reports.
-                  If set to True, assuming probabilities are
-                  also valid over a 6-hour period.
-    nbrhd ------- neighborhood distance in km used with the
-                  probability calculations.
-
-    Outputs
-    -------
-    returns an array of probability bins, forecast frequencies for the total domain
-    of each bin, observation hit rates for each bin, forecast frequencies for the
-    response box for each bin, observation hit rates for the response box for each
-    bin (if not verifying subsets, will return arrays of zeros for the response box
-    metrics).
-    """
-    print('Starting reliability calculations...')
-    prob_bins = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-    # Open probabilistic forecast and observational datasets
-    probdat = Dataset(probpath)
-
-    # Choose correct indices based on variable and threshold
-    probinds = {'reflectivity' : {40 : 0, 50 : 5},
-                'updraft_helicity' : {25 : 1, 40 : 2, 100 : 3},
-                'wind_speed' : {40 : 4}}
-
-    if var == 'updraft_helicity':
-        if obpath is not None:
-            dat = Dataset(obpath)
-            times = dat.variables['fhr'][:]
-            inds = np.where(times == fhr)
-            grid = dat.variables['nearest_neighbor'][inds][0]
-        else:
-            grid = nearest_neighbor_spc(runinitdate, sixhr, fhr, nbrhd=0.)
-    else:
-        raise ValueError('Sorry, support for {} is not yet built in.'.format(var))
-    # Pull and splice probability variable
-    probvar = probdat.variables['P_HYD'][0]
-    d = probinds[var]
-    fcstprobs = probvar[d[int(thresh)]]
-    wrf.disable_xarray()
-    lats = wrf.getvar(probdat, 'lat')
-    lons = wrf.getvar(probdat, 'lon')
-    dx = probdat.DX / 1000. # dx in km
-    r = nbrhd/dx
-    # Get arrays of x and y indices for distance calculations
-    yinds, xinds = np.meshgrid(np.arange(len(lons[0,:])), np.arange(len(lats[:])))
-
-    # Sort probabilities into bins
-    fcstfreq_tot = np.zeros((len(prob_bins)))   # N probs falling into bin for whole domain
-    fcstfreq_rbox = np.zeros((len(prob_bins)))  # N probs in rbox falling into bin
-    ob_hr_tot = np.zeros((len(prob_bins)))      # Ob hit rate for bin and whole domain
-    ob_hr_rbox = np.zeros((len(prob_bins)))     # Ob hit rate for bin in rbox
-
-    # Create mask for isolating response box in grid if applicable
-    if rboxpath is not None:
-        sensin = np.genfromtxt(rboxpath, dtype=str)
-        rbox = sensin[4:8]
-        llon, ulon, llat, ulat = np.array(rbox, dtype=float)
-        lonmask = (lons > llon) & (lons < ulon)
-        latmask = (lats > llat) & (lats < ulat)
-        mask = latmask & lonmask
-        masked_probs = np.ma.masked_array(fcstprobs, mask=~mask)
-
-    # Apply smoother to act as a neighborhood
-    # nbrhd_grid = ndimage.gaussian_filter(grid, sigma=r, order=0)
-    # print(grid[grid>0])
-    # print(nbrhd_grid[grid>0])
-    import matplotlib.pyplot as plt
-    # fig, ((ax1, ax2)) = plt.subplots(1, 2, sharex='col', sharey='row', figsize=(15,15))
-    # clevs = np.linspace(0,1,100)
-    # og = ax1.contourf(grid, clevs, cmap="jet")
-    # plt.colorbar(og, ax=ax1)
-    # clevs = np.linspace(0,0.5,100)
-    # smooth = ax2.contourf(nbrhd_grid, clevs, cmap="jet")
-    # plt.colorbar(smooth, ax=ax2)
-    # clevs = np.linspace(-0.3,0.1,100)
-    # # print(np.min(nbrhd_grid-grid), np.max(nbrhd_grid-grid))
-    # # diff = ax3.contourf(nbrhd_grid-grid, clevs, cmap="viridis")
-    # # plt.colorbar(diff, ax=ax3)
-    # plt.savefig("scipy_smoothed_grid.png")
-
-    for i in range(len(prob_bins)):
-        hits = 0
-        prob = prob_bins[i]
-        print("Calculating reliability over rbox for prob bin {}-{}%".format(prob-10,
-                                                                    prob))
-        # If verifying subsets, we want the reliability inside the response box
-        if rboxpath is not None:
-            # Find indices where fcst probs fall into bin
-            # fcstinds = np.ma.where((np.abs(masked_probs - prob) <= 10) & \
-            #                     (masked_probs < prob))
-            fcstmask = (np.abs(fcstprobs - prob) <= 10) & (fcstprobs < prob)
-            fcstmask = fcstmask.astype(float)
-            print(fcstmask[mask&(fcstmask>0)])
-            fuzzy_fcstmask = ndimage.uniform_filter(fcstmask, size=r)
-            fuzzy_fcstmask = (fuzzy_fcstmask > 0)
-            print(fuzzy_fcstmask[fuzzy_fcstmask == True])
-            # print(fuzzy_fcstmask[fuzzy_fcstmask>0.0000000001 & mask])
-            combo_mask = (fuzzy_fcstmask > 0)
-            masked_grid = np.ma.masked_array(grid, mask=~(mask & fuzzy_fcstmask))
-            fig = plt.figure(figsize=(15,15))
-            clevs = np.linspace(0,1,50)
-            yo = plt.contourf(masked_grid, clevs, cmap='jet')
-            plt.colorbar(yo)
-            fcstfreq_rbox[i] = len(fuzzy_fcstmask[(mask & fuzzy_fcstmask)])
-            if fcstfreq_rbox[i] == 0:
-                ob_hr_rbox[i] = 0
-            else:
-                # Subset of smoothed ob grid that exceeds 0 constitutes a hit
-                where = np.ma.where(masked_grid[mask & (fuzzy_fcstmask)] > 0)
-                hits = len(where[0])
-                # Define ob hit rate
-                ob_hr_rbox[i] = hits / fcstfreq_rbox[i]
-                print("Rbox Hits/Total: ", hits, fcstfreq_rbox[i])
-            plt.title("Fcst Freq: {}; Hits: {}".format(fcstfreq_rbox[i],
-                        hits))
-            plt.savefig("scipy_prob{}-{}.png".format(prob-10,prob))
-            plt.close()
 
     return prob_bins, fcstfreq_rbox, ob_hr_rbox
 
