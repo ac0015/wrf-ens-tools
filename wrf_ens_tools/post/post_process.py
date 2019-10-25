@@ -937,10 +937,58 @@ def storeReliabilityRboxFortran(basedir, fcsthr, probpath, obpath, outfile,
     statistics to 'reliability_out.nc' in the given
     base directory.
     """
+    def checkSuccess():
+        """ Checks reliability input file to make sure arguments were
+            ordered correctly.
+        """
+        try:
+            relin = np.genfromtxt("{}reliability.in".format(basedir), dtype=str)
+            # Accurate argument order
+            args = [str("\\'"+probpath+"\\'"), str("\\'"+obpath+"\\'"),
+                    str("\\'"+outfile+"\\'"),
+                    fcsthr, str("\\'"+variable+"\\'"),
+                    rthresh, sixhour, nbrhd, rbox_bounds[0],
+                    rbox_bounds[1], rbox_bounds[2], rbox_bounds[3]]
+            success = True # Assume success initially
+            # Ensure that each argument was placed into the proper line of the
+            #  reliability input file
+            for ind, line in enumerate(relin):
+                # If an argument doesn't line up with the rel in arg, set False
+                print(str(args[ind]).replace('\\', ''), line)
+                if (str(args[ind]).replace('\\', '') != line):
+                    success = False
+                print(success)
+        except:
+            success = False
+        return success
+
+    def redo_rel_input_file():
+        """
+            Sometimes function sends arguments into
+            reliability input file out of order.
+            If this happens, redo.
+        """
+        if os.path.exists(basedir+'reliability.in'):
+            subprocess_cmd("rm {}/reliability.in".format(basedir))
+        args = [str("\\'"+probpath+"\\'"), str("\\'"+obpath+"\\'"),
+                str("\\'"+outfile+"\\'"),
+                fcsthr, str("\\'"+variable+"\\'"),
+                rthresh, sixhour, nbrhd, rbox_bounds[0],
+                rbox_bounds[1], rbox_bounds[2], rbox_bounds[3]]
+        print("Throwing these into reliability.in")
+        print(args)
+        os.popen("echo {} > {}reliability.in".format(args[0], basedir))
+        for arg in args[1::]:
+            os.popen("echo {} >> {}reliability.in".format(arg, basedir))
+        return
+
+    # Get sensitivity input file to define reliability arguments
     esensin = np.genfromtxt(rboxpath)
-    rbox_bounds = esensin[4:8]
+    rbox_bounds = esensin[4:8] # Response box corners
+    # Remove any pre-existing reliability files
     if os.path.exists(basedir+'reliability.in'):
         subprocess_cmd("rm {}/reliability.in".format(basedir))
+    # Define arguments
     args = [str("\\'"+probpath+"\\'"), str("\\'"+obpath+"\\'"),
             str("\\'"+outfile+"\\'"),
             fcsthr, str("\\'"+variable+"\\'"),
@@ -948,15 +996,35 @@ def storeReliabilityRboxFortran(basedir, fcsthr, probpath, obpath, outfile,
             rbox_bounds[1], rbox_bounds[2], rbox_bounds[3]]
     print("Throwing these into reliability.in")
     print(args)
-    # np.savetxt(basedir+"reliability.in", np.asarray(args))
-    os.popen("echo {} > {}reliability.in".format(args[0], basedir))
-    for arg in args[1::]:
-        os.popen("echo {} >> {}reliability.in".format(arg, basedir))
+    # os.popen("echo {} > {}reliability.in".format(args[0], basedir))
+    # for arg in args[1::]:
+    #     os.popen("echo {} >> {}reliability.in".format(arg, basedir))
+    with open("{}reliability.in".format(basedir), 'w') as file:
+        for arg in args:
+            file.write(f"{arg}\n")
+
+    # If arguments were mixed up in reliability input file, redo
+    count = 1
+    while checkSuccess() == False:
+        print("redoing input file, attempt: {}".format(count))
+        redo_rel_input_file()
+        try:
+            relin = np.genfromtxt("{}reliability.in".format(basedir), dtype=str)
+        except:
+            redo_rel_input_file()
+            relin = np.genfromtxt("{}reliability.in".format(basedir), dtype=str)
+        output_path = relin[2]
+        print(output_path, "'{}'".format(outfile))
+        count += 1
+
+    # Remove any pre-existing stored reliability calculations
     if os.path.exists(outfile):
         subprocess_cmd("rm {}".format(outfile))
         print("Removed old reliability output file...")
     print("Running reliability arguments...")
     print("Directory:", package_dir)
+
+    # Yeet that fortran!
     subprocess_cmd("{}/reliabilitycalc <{}/reliability.in \
                     >{}reliability.out".format(package_dir, basedir, basedir))
     return

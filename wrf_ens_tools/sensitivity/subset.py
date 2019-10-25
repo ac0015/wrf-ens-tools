@@ -1150,51 +1150,7 @@ class Subset:
                 trange = np.arange(S.getRTime()-5, S.getRTime()+1)
             else:
                 trange = np.arange(S.getRTime(), S.getRTime()+1)
-
-            # # Generate SSRs and SSPFs for full ensemble
-            # for ind, fensmem in enumerate(self._fullens[self._fullens != self._truth_member]):
-            #     mem_uh = np.zeros((len(trange), len(wrflats[:]), len(wrflats[0,:])))
-            #     mem_refl = np.zeros((len(trange), zlevs,
-            #                     len(wrflats[:]), len(wrflats[0,:])))
-            #     for t_ind, t in enumerate(trange):
-            #         print("Time: ", t)
-            #         fens_mem = xr.open_dataset("{}mem{}/R{}_{}.out".format(S.getDir(),
-            #                     fensmem, fensmem, t))
-            #         uh = fens_mem["UP_HELI_MAX"][0]
-            #         sim_refl = fens_mem["REFL_10CM"][0]
-            #         mem_uh[t_ind] = uh
-            #         mem_refl[t_ind] = sim_refl
-            #         fens_mem.close()
-            #     fens_SSRs[ind] = gen_surrogate_severe_reports(uh_arr=mem_uh,
-            #             sim_refl_arr=mem_refl, uh_thresh=self._thresh,
-            #             lats=wrflats, lons=wrflons,
-            #             dx=dx, spc_grid=spc_grid)
-            #     fens_SSPFs[ind] = gen_SSPFs_from_SSRs(fens_SSRs[ind],
-            #                 sigma=sigma)
-            #     print("Sigma:", sigma)
-            #
-            # # Generate SSRs and SSPFs for subset
-            # for ind, submem in enumerate(self.getSubMembers()[
-            #             self.getSubMembers() != self._truth_member]):
-            #     submem_uh = np.zeros((len(trange), len(wrflats[:]), len(wrflats[0,:])))
-            #     submem_refl = np.zeros((len(trange), zlevs,
-            #                     len(wrflats[:]), len(wrflats[0,:])))
-            #     print("Member: ", submem)
-            #     for t_ind, t in enumerate(trange):
-            #         print("Time: ", t)
-            #         sub_mem = xr.open_dataset("{}mem{}/R{}_{}.out".format(S.getDir(),
-            #                     submem, submem, t))
-            #         uh = sub_mem["UP_HELI_MAX"][0]
-            #         sim_refl = sub_mem["REFL_10CM"][0]
-            #         submem_uh[t_ind] = uh
-            #         submem_refl[t_ind] = sim_refl
-            #         sub_mem.close()
-            #     sub_SSRs[ind] = gen_surrogate_severe_reports(uh_arr=submem_uh,
-            #             sim_refl_arr=submem_refl, uh_thresh=self._thresh,
-            #             lats=wrflats, lons=wrflons,
-            #             dx=dx, spc_grid=spc_grid)
-            #     sub_SSPFs[ind] = gen_SSPFs_from_SSRs(sub_SSRs[ind],
-            #                 sigma=sigma)
+                
             # Define prob and reliability paths
             subprobpath = S.getDir() + "probs/" + self._subprob
             fensprobpath = S.getDir() + "probs/" + self._fensprob
