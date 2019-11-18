@@ -944,9 +944,9 @@ def storeReliabilityRboxFortran(basedir, fcsthr, probpath, obpath, outfile,
         try:
             relin = np.genfromtxt("{}reliability.in".format(basedir), dtype=str)
             # Accurate argument order
-            args = [str("\\'"+probpath+"\\'"), str("\\'"+obpath+"\\'"),
-                    str("\\'"+outfile+"\\'"),
-                    fcsthr, str("\\'"+variable+"\\'"),
+            args = [str("\'"+probpath+"\'"), str("\'"+obpath+"\'"),
+                    str("\'"+outfile+"\'"),
+                    fcsthr, str("\'"+variable+"\'"),
                     rthresh, sixhour, nbrhd, rbox_bounds[0],
                     rbox_bounds[1], rbox_bounds[2], rbox_bounds[3]]
             success = True # Assume success initially
@@ -970,16 +970,16 @@ def storeReliabilityRboxFortran(basedir, fcsthr, probpath, obpath, outfile,
         """
         if os.path.exists(basedir+'reliability.in'):
             subprocess_cmd("rm {}/reliability.in".format(basedir))
-        args = [str("\\'"+probpath+"\\'"), str("\\'"+obpath+"\\'"),
-                str("\\'"+outfile+"\\'"),
-                fcsthr, str("\\'"+variable+"\\'"),
+        args = [str("\'"+probpath+"\'"), str("\'"+obpath+"\'"),
+                str("\'"+outfile+"\'"),
+                fcsthr, str("\'"+variable+"\'"),
                 rthresh, sixhour, nbrhd, rbox_bounds[0],
                 rbox_bounds[1], rbox_bounds[2], rbox_bounds[3]]
         print("Throwing these into reliability.in")
         print(args)
-        os.popen("echo {} > {}reliability.in".format(args[0], basedir))
-        for arg in args[1::]:
-            os.popen("echo {} >> {}reliability.in".format(arg, basedir))
+        with open("{}reliability.in".format(basedir), 'w') as file:
+            for arg in args:
+                file.write(f"{arg}\n")
         return
 
     # Get sensitivity input file to define reliability arguments
@@ -989,33 +989,31 @@ def storeReliabilityRboxFortran(basedir, fcsthr, probpath, obpath, outfile,
     if os.path.exists(basedir+'reliability.in'):
         subprocess_cmd("rm {}/reliability.in".format(basedir))
     # Define arguments
-    args = [str("\\'"+probpath+"\\'"), str("\\'"+obpath+"\\'"),
-            str("\\'"+outfile+"\\'"),
-            fcsthr, str("\\'"+variable+"\\'"),
+    args = [str("\'"+probpath+"\'"), str("\'"+obpath+"\'"),
+            str("\'"+outfile+"\'"),
+            fcsthr, str("\'"+variable+"\'"),
             rthresh, sixhour, nbrhd, rbox_bounds[0],
             rbox_bounds[1], rbox_bounds[2], rbox_bounds[3]]
     print("Throwing these into reliability.in")
     print(args)
-    # os.popen("echo {} > {}reliability.in".format(args[0], basedir))
-    # for arg in args[1::]:
-    #     os.popen("echo {} >> {}reliability.in".format(arg, basedir))
+    # Write to reliability input file
     with open("{}reliability.in".format(basedir), 'w') as file:
         for arg in args:
             file.write(f"{arg}\n")
 
     # If arguments were mixed up in reliability input file, redo
-    count = 1
-    while checkSuccess() == False:
-        print("redoing input file, attempt: {}".format(count))
-        redo_rel_input_file()
-        try:
-            relin = np.genfromtxt("{}reliability.in".format(basedir), dtype=str)
-        except:
-            redo_rel_input_file()
-            relin = np.genfromtxt("{}reliability.in".format(basedir), dtype=str)
-        output_path = relin[2]
-        print(output_path, "'{}'".format(outfile))
-        count += 1
+    # count = 1
+    # while checkSuccess() == False:
+    #     print("redoing input file, attempt: {}".format(count))
+    #     redo_rel_input_file()
+    #     try:
+    #         relin = np.genfromtxt("{}reliability.in".format(basedir), dtype=str)
+    #     except:
+    #         redo_rel_input_file()
+    #         relin = np.genfromtxt("{}reliability.in".format(basedir), dtype=str)
+    #     output_path = relin[2]
+    #     print(output_path, "'{}'".format(outfile))
+    #     count += 1
 
     # Remove any pre-existing stored reliability calculations
     if os.path.exists(outfile):

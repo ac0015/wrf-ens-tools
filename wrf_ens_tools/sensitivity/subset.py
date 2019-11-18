@@ -1150,7 +1150,7 @@ class Subset:
                 trange = np.arange(S.getRTime()-5, S.getRTime()+1)
             else:
                 trange = np.arange(S.getRTime(), S.getRTime()+1)
-                
+
             # Define prob and reliability paths
             subprobpath = S.getDir() + "probs/" + self._subprob
             fensprobpath = S.getDir() + "probs/" + self._fensprob
