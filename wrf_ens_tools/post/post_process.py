@@ -13,6 +13,8 @@ suite.
 """
 
 import numpy as np
+from sklearn.neighbors import BallTree
+import dask.array as da
 import xarray as xr
 import wrf
 from netCDF4 import Dataset
@@ -1429,3 +1431,40 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         ds.tke.attrs['units'] = indata.TKE_PBL.units
 
     return ds
+
+
+def get_nearest(src_points, candidates, k_neighbors=1):
+    """Find nearest neighbors for all source points from a set of candidate points"""
+
+    # Create tree from the candidate points
+    tree = BallTree(candidates, leaf_size=15, metric='haversine')
+    distances, indices = tree.query(src_points, k=k_neighbors)
+
+    # Transpose to get distances and indices into arrays
+    distances = distances.transpose()
+    indices = indices.transpose()
+
+    # Get closest indices and distances (i.e. array at index 0)
+    # note: for the second closest points, you would take index 1, etc.
+    closest = indices[0]
+    closest_dist = distances[0]
+
+    # Return indices and distances
+    return closest, closest_dist
+
+
+def nearest_lat_lon_index(point, latitudes, longitudes):
+    """
+    Find the index values of the nearest grid point to a desired point.
+    The Haversine distance formula is used, and inputs of lat/lon pairs are
+    required.
+
+    :param point: list, list of latitude, longitude for desired nearest point
+    :param latitudes: dask array of 2-D latitude grid
+    :param longitude: dask array of 2-D longitude grid
+    :return: index values of nearest point on grid
+    """
+    stacked = da.stack((latitudes.flatten(), longitudes.flatten())).transpose()
+    closest = get_nearest(da.array(point).reshape(-1,1).transpose(), stacked)
+    idx = np.unravel_index(closest[0], latitudes.shape)
+    return idx
