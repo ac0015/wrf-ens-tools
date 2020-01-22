@@ -1201,15 +1201,15 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
     :param inname: string of input file path
     :param nest: string, 'moving' for a moving nest simulation
     :param dask: bool, Specify whether to use dask as backend
-    :param chunks: optinal dictionary to specify chunks by each dimesnion. See dask chunks.
+    :param chunks: optional dictionary to specify chunks by each dimension. See dask chunks.
     :return: Xarray Dataset of CF-compliant WRF output stored as dask arrays
     """
     # open the input file
     # specify chunks if not given
     if dask:
         if chunks is None:
-            chunks = {'Time': 1, 'west_east': 50, 'west_east_stag': 50,
-                      'south_north': 50, 'south_north_stag': 50,
+            chunks = {'Time': 50, 'west_east': 100, 'west_east_stag': 100,
+                      'south_north': 100, 'south_north_stag': 100,
                       'bottom_top': 10, 'bottom_top_stag': 10}
 
         indata = xr.open_dataset(inname, chunks=chunks)
@@ -1245,7 +1245,6 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         else:
             ds.attrs[attr] = indata.attrs[attr]
 
-
     # combine and write precipitation variables
     ds['total_precipitation'] = (('time', 'y', 'x'), (indata.RAINC + indata.RAINNC).data)
     ds.total_precipitation.attrs['description'] = 'Total Accumulated Precipitation'
@@ -1262,7 +1261,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
     if indata.T2.units == 'K':
         ds.temperature_2m.attrs['units'] = 'kelvin'
     else:
-        warning.warn('Unknown temperature unit {} encountered'.format(indata.T2.units))
+        warnings.warn('Unknown temperature unit {} encountered'.format(indata.T2.units))
         ds.temperature_2m.attrs['units'] = indata.T2.units
 
     # 2-m potential temperature
@@ -1310,6 +1309,21 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         ds.surface_pressure.attrs['units'] = indata.PSFC.units
 
     # Get full 3-D variables
+    # Height - from geopotential
+    hgt = (indata.PH.data + indata.PHB.data) / 9.81
+    ds['height_mean_sea_level'] = (('time', 'bottom_top', 'y', 'x'), destagger(hgt, 1))
+    ds.height_mean_sea_level.attrs['Description'] = 'Height above mean sea level'
+    ds.height_mean_sea_level.attrs['units'] = 'meter'
+
+    # Terrain height
+    ds['terrain_height'] = (('time', 'y', 'x'), indata.HGT.data)
+    ds.terrain_height.attrs['Description'] = 'Height of model terrain'
+    if indata.HGT.units == 'm':
+        ds.terrain_height.attrs['units'] = 'meter'
+    else:
+        warnings.warn('Unknown height unit {} encountered'.format(indata.HGT.units))
+        ds.terrain_height.attrs['units'] = indata.HGT.units
+
     # Pressure
     # TODO: find a way to not assume units of input data
     p = indata.P + indata.PB
@@ -1349,49 +1363,64 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         ds.rain_mixing_ratio.attrs['units'] = indata.QRAIN.units
 
     # Ice mixing ratio
-    ds['ice_mixing_ratio'] = (('time', 'bottom_top', 'y', 'x'), indata.QICE.data)
-    ds.ice_mixing_ratio.attrs['description'] = 'Ice mixing ratio'
-    if indata.QICE.units == 'kg kg-1':
-        ds.ice_mixing_ratio.attrs['units'] = 'dimensionless'
-    else:
-        warnings.warn('Unknown unit {} encountered'.format(indata.QICE.units))
-        ds.ice_mixing_ratio.attrs['units'] = indata.QICE.units
+    try:
+        ds['ice_mixing_ratio'] = (('time', 'bottom_top', 'y', 'x'), indata.QICE.data)
+        ds.ice_mixing_ratio.attrs['description'] = 'Ice mixing ratio'
+        if indata.QICE.units == 'kg kg-1':
+            ds.ice_mixing_ratio.attrs['units'] = 'dimensionless'
+        else:
+            warnings.warn('Unknown unit {} encountered'.format(indata.QICE.units))
+            ds.ice_mixing_ratio.attrs['units'] = indata.QICE.units
+    except AttributeError:
+        pass
 
     # Snow mixing ratio
-    ds['snow_mixing_ratio'] = (('time', 'bottom_top', 'y', 'x'), indata.QSNOW.data)
-    ds.snow_mixing_ratio.attrs['description'] = 'Snow mixing ratio'
-    if indata.QSNOW.units == 'kg kg-1':
-        ds.snow_mixing_ratio.attrs['units'] = 'dimensionless'
-    else:
-        warnings.warn('Unknown unit {} encountered'.format(indata.QSNOW.units))
-        ds.snow_mixing_ration.attrs['units'] = indata.QSNOW.units
+    try:
+        ds['snow_mixing_ratio'] = (('time', 'bottom_top', 'y', 'x'), indata.QSNOW.data)
+        ds.snow_mixing_ratio.attrs['description'] = 'Snow mixing ratio'
+        if indata.QSNOW.units == 'kg kg-1':
+            ds.snow_mixing_ratio.attrs['units'] = 'dimensionless'
+        else:
+            warnings.warn('Unknown unit {} encountered'.format(indata.QSNOW.units))
+            ds.snow_mixing_ration.attrs['units'] = indata.QSNOW.units
+    except AttributeError:
+        pass
 
     # Graupel mixing ratio
-    ds['graupel_mixing_ratio'] = (('time', 'bottom_top', 'y', 'x'), indata.QGRAUP.data)
-    ds.graupel_mixing_ratio.attrs['description'] = 'Graupel mixing ratio'
-    if indata.QGRAUP.units == 'kg kg-1':
-        ds.graupel_mixing_ratio.attrs['units'] = 'dimensionless'
-    else:
-        warnings.warn('Unknown unit {} encountered'.format(indata.QGRAUP.units))
-        ds.graupel_mixing_ratio.attrs['units'] = indata.QGRAUP.units
+    try:
+        ds['graupel_mixing_ratio'] = (('time', 'bottom_top', 'y', 'x'), indata.QGRAUP.data)
+        ds.graupel_mixing_ratio.attrs['description'] = 'Graupel mixing ratio'
+        if indata.QGRAUP.units == 'kg kg-1':
+            ds.graupel_mixing_ratio.attrs['units'] = 'dimensionless'
+        else:
+            warnings.warn('Unknown unit {} encountered'.format(indata.QGRAUP.units))
+            ds.graupel_mixing_ratio.attrs['units'] = indata.QGRAUP.units
+    except AttributeError:
+        pass
 
     # Ice number concentration
-    ds['ice_number_concentration'] = (('time', 'bottom_top', 'y', 'x'), indata.QNICE.data)
-    ds.ice_number_concentration.attrs['description'] = 'Ice number concentration'
-    if indata.QNICE.units == '  kg-1':
-        ds.ice_number_concentration.attrs['units'] = 'kiligram**-1'
-    else:
-        warnings.warn('Unknown unit {} encountered'.format(indata.QNICE.units))
-        ds.ice_number_concentration.attrs['units'] = indata.QNICE.units
+    try:
+        ds['ice_number_concentration'] = (('time', 'bottom_top', 'y', 'x'), indata.QNICE.data)
+        ds.ice_number_concentration.attrs['description'] = 'Ice number concentration'
+        if indata.QNICE.units == '  kg-1':
+            ds.ice_number_concentration.attrs['units'] = 'kiligram**-1'
+        else:
+            warnings.warn('Unknown unit {} encountered'.format(indata.QNICE.units))
+            ds.ice_number_concentration.attrs['units'] = indata.QNICE.units
+    except AttributeError:
+        pass
 
     # Rain number concentration
-    ds['rain_number_concentration'] = (('time', 'bottom_top', 'y', 'x'), indata.QNRAIN.data)
-    ds.rain_number_concentration.attrs['description'] = 'Rain number concentration'
-    if indata.QNRAIN.units == '  kg(-1)':
-        ds.rain_number_concentration.attrs['units'] = 'kiligram**-1'
-    else:
-        warnings.warn('Unknown unit {} encountered'.format(indata.QNRAIN.units))
-        ds.rain_number_concentration.attrs['units'] = indata.QNRAIN.units
+    try:
+        ds['rain_number_concentration'] = (('time', 'bottom_top', 'y', 'x'), indata.QNRAIN.data)
+        ds.rain_number_concentration.attrs['description'] = 'Rain number concentration'
+        if indata.QNRAIN.units == '  kg(-1)':
+            ds.rain_number_concentration.attrs['units'] = 'kiligram**-1'
+        else:
+            warnings.warn('Unknown unit {} encountered'.format(indata.QNRAIN.units))
+            ds.rain_number_concentration.attrs['units'] = indata.QNRAIN.units
+    except AttributeError:
+        pass
 
     # Unstagger the staggered-grid variables
     # u-component of wind
@@ -1422,13 +1451,16 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         ds.w_wind.attrs['units'] = indata.W.units
 
     # TKE from PBL scheme
-    ds['tke'] = (('time', 'bottom_top', 'y', 'x'), destagger(indata.TKE_PBL.data, -3))
-    ds.tke.attrs['description'] = 'Turbulence Kinetic Energy (TKE) from PBL scheme'
-    if indata.TKE_PBL.units == 'm2 s-2':
-        ds.w_wind.attrs['units'] = 'meter**2/second**2'
-    else:
-        warnings.warn('Unknown unit {} encountered'.format(indata.TKE_PBL.units))
-        ds.tke.attrs['units'] = indata.TKE_PBL.units
+    try:
+        ds['tke'] = (('time', 'bottom_top', 'y', 'x'), destagger(indata.TKE_PBL.data, -3))
+        ds.tke.attrs['description'] = 'Turbulence Kinetic Energy (TKE) from PBL scheme'
+        if indata.TKE_PBL.units == 'm2 s-2':
+            ds.w_wind.attrs['units'] = 'meter**2/second**2'
+        else:
+            warnings.warn('Unknown unit {} encountered'.format(indata.TKE_PBL.units))
+            ds.tke.attrs['units'] = indata.TKE_PBL.units
+    except AttributeError:
+        pass
 
     return ds
 
@@ -1461,10 +1493,10 @@ def nearest_lat_lon_index(point, latitudes, longitudes):
 
     :param point: list, list of latitude, longitude for desired nearest point
     :param latitudes: dask array of 2-D latitude grid
-    :param longitude: dask array of 2-D longitude grid
+    :param longitudes: dask array of 2-D longitude grid
     :return: index values of nearest point on grid
     """
     stacked = da.stack((latitudes.flatten(), longitudes.flatten())).transpose()
-    closest = get_nearest(da.array(point).reshape(-1,1).transpose(), stacked)
+    closest = get_nearest(da.array(point).reshape(-1, 1).transpose(), stacked)
     idx = np.unravel_index(closest[0], latitudes.shape)
     return idx
