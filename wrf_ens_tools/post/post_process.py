@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import cartopy.crs as ccrs
 import cartopy.feature as cfeat
-from .interp_analysis import subprocess_cmd, reflectivity_to_eventgrid
+from .interp_analysis import subprocess_cmd, reflectivity_to_eventgrid, bilinear_interp
 # import pyart
 import os
 from shutil import copyfile
@@ -565,7 +565,8 @@ def postIdealizedAnalysis(inpath, outpath, member,
     return
 
 # Post-process practically perfect
-def storePracPerfNativeGrid(modelinit, fcsthrs, outpath, nbrhd, dx, sixhour=False):
+def storePracPerfNativeGrid(modelinit, fcsthrs, outpath, nbrhd, dx,
+                            sixhour=False):
     '''
     Calculate hourly or six-hourly practically perfect on WRF grid.
     Save to netCDF file for verification.
@@ -624,7 +625,7 @@ def storePracPerfSPCGrid(modelinit, fcsthrs, outpath,
                             nbrhd, dx, sixhour=False,
                             wrfrefpath='/lustre/scratch/aucolema/2016052600/wrfoutREFd2'):
     '''
-    Calculate hourly or six-hourly practically perfect on 80-km grid-spacing
+    Calculate hourly or six-hourly practically perfect on 81-km grid-spacing
     SPC grid, which is then interpolated to WRF grid and stored to netCDF
     for verification.
 
@@ -648,6 +649,15 @@ def storePracPerfSPCGrid(modelinit, fcsthrs, outpath,
     dx -------- horizontal grid-spacing on model domain to
                 serve as the denominator of the Gaussian
                 kernel.
+    idealized - optional boolean describing whether to
+                accept an SSPF array-like to store to
+                practically-perfect file or to calculate
+                practically-perfect probs with actual
+                storm reports from the specified date.
+    SSPF ------ if idealized is set to True, will need to
+                provide array-like with surrogate severe
+                probabilities to used as idealized PP probs.
+
 
     Outputs
     -------
@@ -670,11 +680,80 @@ def storePracPerfSPCGrid(modelinit, fcsthrs, outpath,
     sig = netcdf_out.createVariable('sigma', float, ('sigma'))
     pperfout = netcdf_out.createVariable('practically_perfect', float, ('Time', 'south_north', 'west_east'))
     sig[:] = sigma
-    # Populate outfile with pperf
+    # Populate outfile with pperf (if six-hour, calculating six-hr pperf for each fcst hr)
     for t in range(len(fcsthrs)):
         pperf, lon, lat = calc.calc_prac_perf_spc_grid(modelinit, sixhour, fcsthrs[t], sigma=sigma)
         pperfout[t] = pperf[:]*100.
         times[t] = fcsthrs[t]
+    netcdf_out.close()
+    return
+
+def storeIdealizedPracPef(sspf_arr, outlats, outlons, outpath,
+                            sigma, modelinit, fhrs, spc_grid=True):
+    """
+    Takes array of pre-calculated surrogate severe probability forecast
+    and meta data pertaining to that SSPF and stores it to a specified
+    netCDF outpath. If spc_grid is set to True, will interpolate from
+    lat/lons specified in pperf_grid_template.npz to lat/lons provided
+    as input before storing to output file.
+
+    Inputs
+    ------
+    sspf_arr ---------- array-like containing surrogate severe probability
+                        forecast with values from 0-1
+    outlats ----------- 2D array-like containing desired output latitudes
+                        for which sspf_arr will be valid. If spc_grid=False,
+                        this lat array should correspond to the sspf_arr. If
+                        spc_grid=True, this lat array should correspond with
+                        the latitudes that the sspf_arr will be interpolated
+                        to
+    outlons ----------- 2D array-like containing desired output longitudes
+                        for which sspf_arr will be valid. If spc_grid=False,
+                        this longitude array should correspond with the
+                        longitudes that the sspf_arr will be interpolated to
+    outpath ----------- absolute filepath to describing location to store
+                        practically-perfect output
+    sigma ------------- smoothing parameter (nbrhd/dx) with which
+                        Guassian kernel was applied (for meta data)
+    modelinit --------- datetime object dictating the run initialization
+                        used
+    fhrs -------------- array-like of forecast hours for which pperf is
+                        valid
+    spc_grid ---------- optional boolean describing whether original data
+                        is stored on the SPC 211 grid, in which case data
+                        will be interpolated to outlats/outlons
+
+    Output
+    ------
+    returns NULL but stores PP probs to specified output filepath
+    """
+    # Create outfile
+    netcdf_out = Dataset(outpath, "w", format="NETCDF4")
+
+    # If spc_grid=True, pull lat/lons from pperf grid and interpolate
+    if spc_grid:
+        print("Interpolating practically-perfect to SPC grid")
+        f = np.load(package_dir + "/pperf_grid_template.npz")
+        lats = f['lat']
+        lons = f['lon']
+        sspf_arr = bilinear_interp(grid1x=lons, grid1y=lats,
+                        grid2x=outlons, grid2y=outlats, z=sspf_arr)
+
+    # Set up netCDF
+    netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
+    netcdf_out.createDimension('Time', len(fhrs))
+    netcdf_out.createDimension('south_north', len(outlats[:,0]))
+    netcdf_out.createDimension('west_east', len(outlons[0,:]))
+    netcdf_out.createDimension('sigma', 1)
+    times = netcdf_out.createVariable('fhr', int, ('Time'))
+    sig = netcdf_out.createVariable('sigma', float, ('sigma'))
+    pperfout = netcdf_out.createVariable('practically_perfect', float,
+                ('Time', 'south_north', 'west_east'))
+    sig[:] = sigma
+    times[:] = fhrs
+
+    # Populate outfile with sspf as percentages
+    pperfout[:] = sspf_arr*100.
     netcdf_out.close()
     return
 
@@ -728,7 +807,8 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, sixhour=True,
     netcdf_out.close()
     return
 
-def storeNearestNeighborFortran(modelinit, fcsthr, outpath, sixhour=True,
+def storeNearestNeighborFortran(modelinit, fcsthr, outpath,
+                            sixhour=True, obvar="P_HYD",
                             variable="updraft_helicity",
                             wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs'
                                        '/2016050800/wrfoutREFd2',
@@ -753,6 +833,8 @@ def storeNearestNeighborFortran(modelinit, fcsthr, outpath, sixhour=True,
     sixhour --------------- boolean specifying whether to store
                             six-hour or one-hour period of
                             nearest neighbor storm reports.
+    obvar ----------------- string indicating key of variable in which
+                            reliability ob will be stored
     variable -------------- defaults to 'updraft_helicity' but
                             also supports reliability processing
                             for 'reflectivity'.
@@ -768,11 +850,8 @@ def storeNearestNeighborFortran(modelinit, fcsthr, outpath, sixhour=True,
     returns NULL, but saves to netCDF outpath.
     '''
     # Create outfile
-    #os.popen("cp {} {}".format(wrfrefpath, outpath))
-    # os.popen("cp {} {}".format(wrfrefpath, outpath))
     copyfile(wrfrefpath, outpath)
     netcdf_out = Dataset(outpath, "a")
-    obvar = "P_HYD"
     netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
     netcdf_out.SIXHOUR = str(sixhour)
     netcdf_out.FHR = fcsthr
@@ -788,6 +867,38 @@ def storeNearestNeighborFortran(modelinit, fcsthr, outpath, sixhour=True,
     netcdf_out.variables[obvar][0,0,:,:] = grid[:,:]
 
     netcdf_out.close()
+    return
+
+def storeIdealizedNearestNeighborFortran(ssr_arr, outpath,
+                            wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs'
+                                       '/2016050800/wrfoutREFd2',
+                            obvar="P_HYD"):
+    '''
+    Calculate hourly nearest neighbor on WRF grid.
+    Overwrite to WRF outfile for fast verification
+    with Fortran 77.
+
+    Inputs
+    ------
+    ssr_arr --------------- 2D array-like of surrogate severe reports
+    outpath --------------- filepath of desired earest neighbor output file
+                            (WRF reference file will be copied to this path)
+    wrfrefpath ------------ path to reference WRF file that has lat/lon info
+    obvar ----------------- string indicating key of variable in which
+                            ssr_arr will be stored
+
+    Outputs
+    -------
+    returns NULL, but saves to netCDF outpath.
+    '''
+    # Create outfile
+    copyfile(wrfrefpath, outpath)
+    netcdf_out = Dataset(outpath, "a")
+
+    # Populate outfile with gridded observations
+    netcdf_out.variables[obvar][0,0,:,:] = ssr_arr[:,:]
+    netcdf_out.close()
+
     return
 
 def storeReliabilityRboxFortran(basedir, fcsthr, probpath, obpath, outfile,
@@ -826,26 +937,92 @@ def storeReliabilityRboxFortran(basedir, fcsthr, probpath, obpath, outfile,
     statistics to 'reliability_out.nc' in the given
     base directory.
     """
+    def checkSuccess():
+        """ Checks reliability input file to make sure arguments were
+            ordered correctly.
+        """
+        try:
+            relin = np.genfromtxt("{}reliability.in".format(basedir), dtype=str)
+            # Accurate argument order
+            args = [str("\'"+probpath+"\'"), str("\'"+obpath+"\'"),
+                    str("\'"+outfile+"\'"),
+                    fcsthr, str("\'"+variable+"\'"),
+                    rthresh, sixhour, nbrhd, rbox_bounds[0],
+                    rbox_bounds[1], rbox_bounds[2], rbox_bounds[3]]
+            success = True # Assume success initially
+            # Ensure that each argument was placed into the proper line of the
+            #  reliability input file
+            for ind, line in enumerate(relin):
+                # If an argument doesn't line up with the rel in arg, set False
+                print(str(args[ind]).replace('\\', ''), line)
+                if (str(args[ind]).replace('\\', '') != line):
+                    success = False
+                print(success)
+        except:
+            success = False
+        return success
+
+    def redo_rel_input_file():
+        """
+            Sometimes function sends arguments into
+            reliability input file out of order.
+            If this happens, redo.
+        """
+        if os.path.exists(basedir+'reliability.in'):
+            subprocess_cmd("rm {}/reliability.in".format(basedir))
+        args = [str("\'"+probpath+"\'"), str("\'"+obpath+"\'"),
+                str("\'"+outfile+"\'"),
+                fcsthr, str("\'"+variable+"\'"),
+                rthresh, sixhour, nbrhd, rbox_bounds[0],
+                rbox_bounds[1], rbox_bounds[2], rbox_bounds[3]]
+        print("Throwing these into reliability.in")
+        print(args)
+        with open("{}reliability.in".format(basedir), 'w') as file:
+            for arg in args:
+                file.write(f"{arg}\n")
+        return
+
+    # Get sensitivity input file to define reliability arguments
     esensin = np.genfromtxt(rboxpath)
-    rbox_bounds = esensin[4:8]
+    rbox_bounds = esensin[4:8] # Response box corners
+    # Remove any pre-existing reliability files
     if os.path.exists(basedir+'reliability.in'):
         subprocess_cmd("rm {}/reliability.in".format(basedir))
-    args = [str("\\'"+probpath+"\\'"), str("\\'"+obpath+"\\'"),
-            str("\\'"+outfile+"\\'"),
-            fcsthr, str("\\'"+variable+"\\'"),
+    # Define arguments
+    args = [str("\'"+probpath+"\'"), str("\'"+obpath+"\'"),
+            str("\'"+outfile+"\'"),
+            fcsthr, str("\'"+variable+"\'"),
             rthresh, sixhour, nbrhd, rbox_bounds[0],
             rbox_bounds[1], rbox_bounds[2], rbox_bounds[3]]
     print("Throwing these into reliability.in")
     print(args)
-    # np.savetxt(basedir+"reliability.in", np.asarray(args))
-    os.popen("echo {} > {}reliability.in".format(args[0], basedir))
-    for arg in args[1::]:
-        os.popen("echo {} >> {}reliability.in".format(arg, basedir))
+    # Write to reliability input file
+    with open("{}reliability.in".format(basedir), 'w') as file:
+        for arg in args:
+            file.write(f"{arg}\n")
+
+    # If arguments were mixed up in reliability input file, redo
+    # count = 1
+    # while checkSuccess() == False:
+    #     print("redoing input file, attempt: {}".format(count))
+    #     redo_rel_input_file()
+    #     try:
+    #         relin = np.genfromtxt("{}reliability.in".format(basedir), dtype=str)
+    #     except:
+    #         redo_rel_input_file()
+    #         relin = np.genfromtxt("{}reliability.in".format(basedir), dtype=str)
+    #     output_path = relin[2]
+    #     print(output_path, "'{}'".format(outfile))
+    #     count += 1
+
+    # Remove any pre-existing stored reliability calculations
     if os.path.exists(outfile):
         subprocess_cmd("rm {}".format(outfile))
         print("Removed old reliability output file...")
     print("Running reliability arguments...")
     print("Directory:", package_dir)
+
+    # Yeet that fortran!
     subprocess_cmd("{}/reliabilitycalc <{}/reliability.in \
                     >{}reliability.out".format(package_dir, basedir, basedir))
     return

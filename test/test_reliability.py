@@ -1,6 +1,5 @@
-import numpy as np
-import os
-from wrf_ens_tools.calc import scipyReliabilityRbox, ReliabilityRbox
+import numpy as np; import os
+from wrf_ens_tools.post import storeReliabilityRboxFortran
 from datetime import datetime
 from netCDF4 import Dataset
 
@@ -14,7 +13,7 @@ prob_hit = 0.3
 fake_ob_data = np.random.choice([0, 1], p=[1-prob_hit, prob_hit], size=(1, ydim, xdim))
 
 # Pull real lat/lons
-real_probs = "/lustre/scratch/aucolema/2016052600/probs/FULLENSwrfout_nbr30_f28.prob"
+real_probs = "wrfoutREFd2"
 latlondat = Dataset(real_probs)
 lats = latlondat.variables['XLAT'][:]
 lons = latlondat.variables['XLONG'][:]
@@ -65,9 +64,9 @@ run = datetime(2018, 5, 28, 0)
 rboxpath = "esens.in"
 sixhr = True
 
-def test_scipy_reliability_rbox():
-    # Test reliability over response box
-    bins, fcst_freq_rbox, ob_hr_rbox = scipyReliabilityRbox(dummy_probpath, run, fhr,
-                    obpath=dummy_obpath, var='updraft_helicity',
-                    thresh=100., rboxpath=rboxpath, sixhr=sixhr, nbrhd=0.)
-    assert(((ob_hr_rbox - prob_hit) < 0.05).all() == True)
+# def test_scipy_reliability_rbox():
+#     # Test reliability over response box
+#     bins, fcst_freq_rbox, ob_hr_rbox = scipyReliabilityRbox(dummy_probpath, run, fhr,
+#                     obpath=dummy_obpath, var='updraft_helicity',
+#                     thresh=100., rboxpath=rboxpath, sixhr=sixhr, nbrhd=0.)
+#     assert(((ob_hr_rbox - prob_hit) < 0.05).all() == True)

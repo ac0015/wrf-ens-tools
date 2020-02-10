@@ -14,8 +14,7 @@ from wrf_ens_tools.post import fromDatetime, interpRAPtoWRF, subprocess_cmd
 from wrf_ens_tools.post import storeReliabilityRboxFortran
 from wrf_ens_tools.post import storeNearestNeighborFortran
 from wrf_ens_tools.plots import plotProbs, plotDiff, plotSixPanels
-from wrf_ens_tools.calc import FSSnetcdf, scipyReliabilityRbox, ReliabilityRbox, rmse
-from wrf_ens_tools.calc import calc_refl_cov_rbox, calc_refl_max_rbox, calc_subset_avg_response_rbox
+from wrf_ens_tools.calc import *
 from wrf_ens_tools.post import process_wrf, postTTUWRFanalysis, postIdealizedAnalysis
 from netCDF4 import Dataset
 # from profilehooks import profile
@@ -38,7 +37,7 @@ class Subset:
                  percent=70., sensvalfile="SENSvals.nc", nbrhd=32.1869, thresh=25.,
                  sensvars=['500_hPa_GPH', '700_hPa_T', '850_hPa_T', 'SLP'],
                  analysis_type="RAP", wrfanalysis_to_post_path=None,
-                 idealized=False, truth_member=1):
+                 idealized=False, truth_member=1, semi_idealized=False):
         """
         Constructor for an instance of the Subset class.
 
@@ -84,6 +83,7 @@ class Subset:
         self._thresh = thresh
         self._nbr = nbrhd
         self._idealized = idealized
+        self._semi_idealized = semi_idealized
         # Only need this if you need to post-process an analysis file
         #  and not using RAP
         self._wrfpath_to_post_proc = wrfanalysis_to_post_path
@@ -112,6 +112,8 @@ class Subset:
         yr, mo, day, hr = fromDatetime(self._sensdate, interp=True)
         if self._idealized:
             self._truth_member = truth_member
+        elif self._semi_idealized:
+            self._truth_member = truth_member
         self._analysis_type = analysis_type
         if self._analysis_type.upper() == "RAP":
             self._analysis = "{}RAP_interp_to_WRF_{}{}{}{}.nc".format(sens.getDir(),
@@ -126,7 +128,7 @@ class Subset:
         self._sensvalfile = sens.getDir() + sensvalfile
         self._fensprob = "FULLENSwrfout_nbr{}_f{}.prob".format(int(self._nbr), self._sens.getRTime())
         self._subprob = "SUBSETwrfout_nbr{}_f{}.prob".format(int(self._nbr), self._sens.getRTime())
-        self._dx = Dataset(sens.getRefFileD2()).DX
+        self._dx = Dataset(sens.getRefFileD2()).DX / 1000. # convert to km
 
     def __str__(self):
         return "Subset object with full ensemble of {} members, subset size of {}, \nand " \
@@ -202,7 +204,7 @@ class Subset:
     def getHorizGridSpacingD2(self):
         """
         Returns horizontal grid spacing
-        of inner domain
+        of inner domain in kilometers
         """
         return self._dx
 
@@ -230,7 +232,7 @@ class Subset:
         """
         if half_post_processed:
             postTTUWRFanalysis(self._wrfpath_to_post_proc, self._analysis)
-        elif self._idealized:
+        elif self._idealized or self._semi_idealized:
             postIdealizedAnalysis(self._sensvalfile, self._analysis,
                                 self._truth_member)
         else:
@@ -273,170 +275,6 @@ class Subset:
         np.savetxt(S.getDir() + 'subset_members.txt', np.array(self._subset, dtype=int))
         return
 
-    def OLDcalcProbs(self, members):
-        """
-        DEPRECATED! Use calcProbs() instead.
-
-        Runs the fortran executable calcprobSUBSET to calculate
-        probabilities for any number of ensemble members. Takes
-        an input file with ensemble number, ensemble members,
-        response time, neighborhood, and prob output path.
-        """
-        S = self.getSens()
-
-        ############### calcProbs-specific error-handling methods. ############
-        def checkOverHundred(probpath, sens_obj, args):
-            """
-            Prints max probability and returns True if max prob
-            is higher than 100.
-            """
-            try:
-                probs = Dataset(probpath)
-                probvar = probs.variables['P_HYD'][0]
-                fail = np.max(probvar[:4]) > 100.
-                print("Max probability: ", np.max(probvar[:4]))
-                probs.close()
-            except:
-                reRun(probpath, sens_obj, args)
-                return checkOverHundred(probpath, sens_obj, args)
-            return fail
-
-        def checkZero(probpath, sens_obj, args):
-            """
-            Prints max probability and returns True is max prob
-            is zero.
-            """
-            try:
-                probs = Dataset(probout)
-                probvar = probs.variables['P_HYD'][0]
-                possible_fail = np.max(probvar[:4]) == 0.
-                probs.close()
-            except:
-                reRun(probpath, sens_obj, args)
-                return checkZero(probpath, sens_obj, args)
-            return possible_fail
-
-        def reRun(probpath, sens_obj, args):
-            """
-            Re-runs calcProbs.
-            """
-            if os.path.exists(probpath):
-                os.popen('rm {}'.format(probpath))
-            os.popen("cp {} {}".format(sens_obj.getRefFileD2(), probpath))
-            subprocess_cmd(args)
-            return
-        ############## End Error-Handling Methods ############################
-
-        # Create or navigate into probs directory
-        probdir = S.getDir() + "probs/"
-        direxists = os.path.exists(probdir)
-        if (direxists == False):
-            os.mkdir(probdir)
-        os.chdir(probdir)
-        print("Calculating probs for: ", members)
-        if len(members) == len(self._fullens):
-            fname = "fullens_probs.in"
-            probout = self._fensprob
-        else:
-            fname = "subset_probs.in"
-            probout = self._subprob
-
-        # Format input file
-        os.popen('echo {} > {}'.format(len(members), fname))
-        os.popen('echo {} >> {}'.format(' '.join(np.array(members, dtype=str)), fname))
-        os.popen('echo {} >> {}'.format(str(S.getRTime()), fname))
-        os.popen('echo {} >> {}'.format(str(self._nbr), fname))
-        os.popen('echo {} >> {}'.format(probout, fname))
-        print("Storing to {}".format(probout))
-
-        # Initialize probfile
-        if os.path.exists(probout):
-            os.popen('rm {}'.format(probout))
-        os.popen("cp {} {}".format(S.getRefFileD2(), probout))
-
-        # Run fortran executable
-        # TO-DO: figure out why this fails when submitted as a job
-        if S.getSixHour():
-            print("Calculating six hour probabilities...")
-            probcalc_exec = "sixhrprobcalc"
-        else:
-            print("Calculating one hour probabilities...")
-            probcalc_exec = "probcalcSUBSET"
-
-        probcalcpath = os.path.join(package_dir, probcalc_exec)
-        args = "{} <{} >probs.out".format(probcalcpath, fname)
-        try:
-            subprocess_cmd(args)
-        except OSError:
-            # Try again - sometimes this executable is finicky
-            try:
-                reRun(probout, S, args)
-            except:
-                print('probcalc failed twice. Continue to error checks.')
-
-        # Check to make sure it ran correctly
-        if os.path.exists(probout) == False:
-            print('probcalc failed. Re-running.')
-            reRun(probout, S, args)
-        fail_thresh = checkOverHundred(probout, S, args)
-
-        # If max prob is zero, check probs.out to make sure probcalc didn't
-        #  somehow fail without error. (This exectuable is finicky as helll).
-        possible_fail = checkZero(probout, S, args)
-
-        # If max prob is over hundred, probcalcfailed and needs to re-run.
-        if fail_thresh:
-            print('Max prob indicates prob calc did not run correctly')
-            print('Attempting once more...')
-            reRun(probout, S, args)
-            if os.path.exists(probout) == False:
-                reRun(probout, S, args)
-            fail_thresh = checkOverHundred(probout, S, args)
-            possible_fail = checkZero(probout, S, args)
-            # Repeat checks one more time.
-            if fail_thresh:
-                print('Failed again. Re-running entire function.')
-                return self.calcProbs(members)
-            elif possible_fail:
-                with open('probs.out') as out:
-                    lowcase_out = [o.lower() for o in out]
-                    print(lowcase_out)
-                    # If the word 'error' in probs.out re-run, or if max is still zero
-                    #  and we're calculating for the full ensemble, likely needs re-run.
-                    fail = (np.array(['error' in s for s in lowcase_out]).any()) or (probout == self._fensprob)
-                    if fail:
-                        print("The rare and elusive netCDF error may have been detected. Re-run entire function")
-                        return self.calcProbs(members)
-        # If max prob is zero, probcalcSUBEST likely failed. Investigate.
-        elif possible_fail:
-            with open('probs.out') as out:
-                lowcase_out = [o.lower() for o in out]
-                print(lowcase_out)
-                # If the word 'error' in probs.out re-run, or if max is still zero
-                #  and we're calculating for the full ensemble, likely needs re-run.
-                fail = (np.array(['error' in s for s in lowcase_out]).any()) or (probout == self._fensprob) or (len(np.array([s for s in lowcase_out])) < 5)
-                #print(fail)
-                if fail:
-                    print("The rare and elusive netCDF error may have been detected. Re-run probcalcSUBSET.")
-                    reRun(probout, S, args)
-                    fail_thresh = checkOverHundred(probout, S, args)
-                    possible_fail = checkZero(probout, S, args)
-                    # Repeat checks one more time.
-                    if fail_thresh:
-                        print('Failed again. Re-running entire function.')
-                        return self.calcProbs(members)
-                    elif possible_fail:
-                        with open('probs.out') as out:
-                            lowcase_out = [o.lower() for o in out]
-                            print(lowcase_out)
-                            # If the word 'error' in probs.out re-run, or if max is still zero
-                            #  and we're calculating for the full ensemble, likely needs re-run.
-                            fail = (np.array(['error' in s for s in lowcase_out]).any()) or (probout == self._fensprob)
-                            if fail:
-                                print('Failed again. Re-running entire function.')
-                                return self.calcProbs(members)
-        return
-
     def calcProbs(self, members):
         """
         Runs the fortran executable calcprobSUBSET or sixhrprobcalc to calculate
@@ -477,6 +315,9 @@ class Subset:
             os.mkdir(probdir)
         os.chdir(probdir)
         print("Calculating probs for: ", members)
+        # If semi-idealized, remove truth member from membership
+        if self._semi_idealized or self._idealized:
+            self._fullens = self._fullens[self._fullens != self._truth_member]
         if len(members) == len(self._fullens):
             fname = "fullens_probs.in"
             probout = self._fensprob
@@ -492,6 +333,7 @@ class Subset:
         args.append(str(S.getRTime()))
         args.append(str(self._nbr))
         args.append(probout)
+        print(args)
         subprocess.check_call(args)
 
         # Initialize probfile
@@ -529,6 +371,7 @@ class Subset:
         # a risk we're gonna have to take
         success = checkSuccess(S, args)
         while success == False:
+            print(args)
             reRun(probout, S, args)
             success = checkSuccess(S, args)
 
@@ -1214,3 +1057,254 @@ class Subset:
             raise
 
         return
+
+    def semiIdealizedStoreUHStatsNetCDF(self, outpath, pperfpath,
+                                    reliabilityobpath, spc_grid,
+                                    spc_sigma=None):
+        """
+        Stores UH verification stats for a semi-idealized experiment in
+        which a randomly-chosen ensemble member serves as "truth" and
+        generates a surrogate severe field. Stats stored to to netCDF4
+        file using xarray.
+
+        Inputs
+        ------
+        outpath ----------- absolute output filepath as a string
+        pperfpath --------- absolute filepath for practically perfect
+                            gridded data
+        reliabilityobpath - absolute filepath for reliability observational
+                            point data on ensemble grid
+        spc_grid ---------- boolean specifying whether to use the SPC 211
+                            grid and interpolate to WRF, or generate SSRs
+                            on WRF grid throughout
+        spc_sigma --------- if using SPC grid, may want to define
+                            standard deviation of Gaussian kernel
+                            (smoothing coefficient) explicitly.
+                            Otherwise, will use subset neighborhood
+                            and SPC grid-spacing
+
+        Outputs
+        -------
+        returns NULL and stores UH verification stats to outpath as netCDF4
+        """
+        ####################### Checking for success ###########################
+        def checkSuccess():
+            """
+            Checks to see if the word "SUCCESSFUL"
+            appears in the reliabilitycalc log file, indicating
+            the reliability calculation was completed
+            correctly.
+            """
+            with open(S.getDir()+'reliability.out') as out:
+                lowcase_out = [o.lower() for o in out]
+                success = (np.array(['successful' in s for s in lowcase_out]).any())
+            return success
+        ########################################################################
+
+        if self._semi_idealized:
+            S = self.getSens()
+            rstring_to_rindex = {"6-hr Max UH": "UH_MAX",
+                                 "6-hr UH Coverage": "UH_COV",
+                                 "6-hr Max Refl": "DBZ_MAX",
+                                 "6-hr Refl Coverage": "DBZ_COV"}
+            truthmem_ind = self._truth_member - 1
+
+            # Create entry as xarray dataset
+            sens_vars = np.empty((1, 30), dtype="U30")
+            sens_vars[0, :len(self._sensvars)] = np.asarray(self._sensvars[:])
+            sub_mems = np.zeros((1,len(self._fullens)), dtype=int) * np.NaN
+            sub_mems[0, :len(self.getSubMembers())-1] = np.asarray(
+                        self.getSubMembers())[self.getSubMembers() != self._truth_member]
+            assert(self.getSubMembers()[0] == self._truth_member)
+
+            # Generate surrogate severe fields
+            wrfref = xr.open_dataset(S.getRefFileD2())
+            wrflats, wrflons =  wrfref["XLAT"][0].values, wrfref["XLONG"][0].values
+            zlevs = len(wrfref["P_HYD"][0,:,0,0])
+            if spc_grid:
+                # Get lats and lons for practically perfect grid
+                ppfile = '{}/../calc/pperf_grid_template.npz'.format(package_dir)
+                f = np.load(ppfile)
+                lons = f["lon"]
+                lats = f["lat"]
+                f.close()
+                dx = 81. # Approximate horizontal grid spacing of SPC 211 grid
+                if spc_sigma is not None:
+                    sigma = spc_sigma
+                else:
+                    sigma = self._nbr / dx
+            else:
+                lats, lons = wrfref["XLAT"][0].values, wrfref["XLONG"][0].values
+                dx = self.getHorizGridSpacingD2()
+                sigma = self._nbr / dx
+            wrfref.close()
+            print(np.shape(lats))
+            fens_SSRs = np.zeros((len(self._fullens)-1, len(lats),
+                                len(lats[0,:])))
+            fens_SSPFs = np.zeros_like(fens_SSRs)
+            sub_SSRs = np.zeros((len(self.getSubMembers())-1,
+                                len(lats), len(lats[0,:])))
+            sub_SSPFs = np.zeros_like(sub_SSRs)
+            # Determine time range for SSRs
+            if S.getSixHour():
+                trange = np.arange(S.getRTime()-5, S.getRTime()+1)
+            else:
+                trange = np.arange(S.getRTime(), S.getRTime()+1)
+
+            # Define prob and reliability paths
+            subprobpath = S.getDir() + "probs/" + self._subprob
+            fensprobpath = S.getDir() + "probs/" + self._fensprob
+            outrel = S.getDir() + "reliability_out.nc"
+            rtimedate = S.getRunInit() + timedelta(hours=S.getRTime())
+
+            # Calculate FSS from idealized pperf
+            if os.path.exists(pperfpath):
+                fens_fss = FSSnetcdf(fensprobpath, pperfpath, rtimedate,
+                            var='updraft_helicity', thresh=self._thresh,
+                            rboxpath=S.getDir()+'esens.in')
+                sub_fss = FSSnetcdf(subprobpath, pperfpath, rtimedate,
+                            var='updraft_helicity', thresh=self._thresh,
+                            rboxpath=S.getDir()+'esens.in')
+                f_fss_tot, f_fss_rbox, sig = fens_fss
+                s_fss_tot, s_fss_rbox, sig = sub_fss
+                # Process the reliability observation file by calculating
+                #  reliabilty in fortran - those results are stored to
+                #  a netCDF file called 'reliability_out.nc'
+                print("Processing reliability of {} with Fortran...".format(subprobpath))
+                success = False
+                i = 0
+                while (success == False):
+                    storeReliabilityRboxFortran(S.getDir(), S.getRTime(),
+                                subprobpath, reliabilityobpath, outrel,
+                                rboxpath=S.getDir()+'esens.in',
+                                sixhour=S.getSixHour(),
+                                variable="updraft_helicity",
+                                rthresh=self._thresh, nbrhd=self._nbr,
+                                wrfrefpath=S.getRefFileD2())
+                    time.sleep(.300)
+                    print("{}th attempt of calculating reliability...".format(i))
+                    success = checkSuccess()
+                    i += 1
+                # Process result with xarray
+                sub_reliability = xr.open_dataset(outrel)
+                prob_bins = sub_reliability["prob_bins"]
+                s_fcstfreq_rbox = sub_reliability["fcst_frequency"]
+                s_ob_hr_rbox = sub_reliability["ob_hit_rate"]
+                sub_reliability.close()
+            else:
+                raise FileNotFoundError('Please run storePracPerf() or \
+                set correct obpath.')
+            # Create entry as xarray dataset
+            sens_vars = np.empty((1, 30), dtype="U30")
+            sens_vars[0, :len(self._sensvars)] = np.asarray(self._sensvars[:])
+            sub_mems = np.zeros((1,len(self._fullens)), dtype=int) * np.NaN
+            sub_mems[0, :len(self.getSubMembers())] = np.asarray(self.getSubMembers())
+            ds = xr.Dataset({'Sens_Time': (['subset'], np.atleast_1d(S.getSensTime())),
+                     'Subset_Size': (['subset'], np.atleast_1d(self._subsize)),
+                     'Sens_Vars':  (['subset', 'sensvar'],
+                                    np.atleast_2d(sens_vars)),
+                     'Subset_Method': (['subset'],
+                        np.atleast_1d(list(self._methodchoices.keys())[self._method-1])),
+                     'Sens_Threshold': (['subset'], np.atleast_1d(self._percent)),
+                     'Response_Func': (['subset'], np.atleast_1d(S.getRString())),
+                     'Response_Time': (['subset'], np.atleast_1d(S.getRTime())),
+                     'Response_Box': (['subset', 'rbox'],
+                                        np.atleast_2d(S.getRbox())),
+                     'Full_Ens_FSS_Total': (['subset'], np.atleast_1d(f_fss_tot)),
+                     'Full_Ens_FSS_Rbox': (['subset'], np.atleast_1d(f_fss_rbox)),
+                     'Subset_FSS_Total': (['subset'], np.atleast_1d(s_fss_tot)),
+                     'Subset_FSS_Rbox': (['subset'], np.atleast_1d(s_fss_rbox)),
+                     'Prac_Perf_Sigma': (['subset'], np.atleast_1d(sig[0])),
+                     'Neighborhood': (['subset'], np.atleast_1d(self._nbr)),
+                     'Response_Thresh': (['subset'], np.atleast_1d(self._thresh)),
+                     'Subset_Fcst_Freq_Rbox': (['subset', 'prob_bins'],
+                                                np.atleast_2d(s_fcstfreq_rbox)),
+                     'Subset_Ob_Hit_Rate_Rbox': (['subset', 'prob_bins'],
+                                                 np.atleast_2d(s_ob_hr_rbox)),
+                     'Subset_Members': (['subset', 'submems'],
+                                        sub_mems)},
+                     coords={'run': S.getRunInit(),
+                             # 'subset': np.arange(1),
+                             'bins': prob_bins,
+                             'rbox': ['llon', 'ulon', 'llat', 'ulat']})
+            if os.path.exists(outpath):
+                og_ds = xr.open_dataset(outpath)
+                print("Opened original dataset...")
+                # Check first to see if we need to add full ens reliability
+                print("Current Rthresh",
+                    self._thresh, "Current Full Ens Thresh Vals",
+                    og_ds.Full_Ens_Response_Thresh.values)
+                if (self._thresh not in og_ds.Full_Ens_Response_Thresh.values):
+                    print("Processing full ens reliability for new threshold...")
+                    success = False
+                    while (success == False):
+                        storeReliabilityRboxFortran(S.getDir(), S.getRTime(),
+                                    fensprobpath, reliabilityobpath, outrel,
+                                    rboxpath=S.getDir()+'esens.in',
+                                    sixhour=S.getSixHour(),
+                                    variable="updraft_helicity",
+                                    rthresh=self._thresh, nbrhd=self._nbr,
+                                    wrfrefpath=S.getRefFileD2())
+                        time.sleep(.300)
+                        success = checkSuccess()
+                    fens_reliability = xr.open_dataset(outrel)
+                    prob_bins = fens_reliability["prob_bins"]
+                    f_fcstfreq_rbox = fens_reliability["fcst_frequency"]
+                    f_ob_hr_rbox = fens_reliability["ob_hit_rate"]
+                    print("New threshold full ob hit rate", f_ob_hr_rbox)
+                    new_ds = xr.Dataset({'Full_Ens_Response_Thresh': (['rthresh'],
+                                                np.atleast_1d(self._thresh)),
+                                        'Full_Ens_Fcst_Freq_Rbox': (['rthresh', 'prob_bins'],
+                                                np.atleast_2d(f_fcstfreq_rbox)),
+                                        'Full_Ens_Ob_Hit_Rate_Rbox': (['rthresh', 'prob_bins'],
+                                                np.atleast_2d(f_ob_hr_rbox))},
+                                        coords={'run': S.getRunInit(),
+                                                'bins': prob_bins,
+                                                'rbox': ['llon', 'ulon', 'llat', 'ulat']})
+                    print(new_ds)
+                    fens_reliability.close()
+                    og_fens_ds = xr.concat([og_ds, new_ds], dim='rthresh',
+                                    data_vars=['Full_Ens_Response_Thresh',
+                                    'Full_Ens_Fcst_Freq_Rbox',
+                                    'Full_Ens_Ob_Hit_Rate_Rbox'])
+                    new_ds.close()
+                    print("Concatenated rel to appending dataset...\n", og_fens_ds)
+                    # Finally concatenate with existing netCDF dataset
+                    ds = xr.concat([og_fens_ds, ds], dim='subset', data_vars='minimal')
+                    og_fens_ds.close()
+                else:
+                    ds = xr.concat([og_ds, ds], dim='subset', data_vars='minimal')
+                og_ds.close()
+                print("Appended new dataset to original dataset...\n\n", ds)
+                # os.popen("rm {}".format(outpath))
+            else:
+                print("Adding full ens rel to ", ds)
+                success = False
+                while (success == False):
+                    storeReliabilityRboxFortran(S.getDir(), S.getRTime(),
+                                fensprobpath, reliabilityobpath, outrel,
+                                rboxpath=S.getDir()+'esens.in',
+                                sixhour=S.getSixHour(),
+                                variable="updraft_helicity",
+                                rthresh=self._thresh, nbrhd=self._nbr,
+                                wrfrefpath=S.getRefFileD2())
+                    time.sleep(.300)
+                    success = checkSuccess()
+                fens_reliability = xr.open_dataset(outrel)
+                prob_bins = fens_reliability["prob_bins"]
+                f_fcstfreq_rbox = fens_reliability["fcst_frequency"]
+                f_ob_hr_rbox = fens_reliability["ob_hit_rate"]
+                fens_reliability.close()
+                ds["Full_Ens_Response_Thresh"] = (('rthresh'),
+                                            np.atleast_1d(self._thresh))
+                ds["Full_Ens_Fcst_Freq_Rbox"] = (('rthresh', 'prob_bins'),
+                                            np.atleast_2d(f_fcstfreq_rbox))
+                ds["Full_Ens_Ob_Hit_Rate_Rbox"] = (('rthresh', 'prob_bins'),
+                                            np.atleast_2d(f_ob_hr_rbox))
+            print("FINAL DATASET TO WRITE:", ds)
+            ds.to_netcdf("test.nc", unlimited_dims=['subset', 'rthresh'],
+                        format="NETCDF4", mode='w')
+            os.rename("test.nc", outpath)
+            ds.close()
+
+            return

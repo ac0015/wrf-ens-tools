@@ -45,7 +45,7 @@ sensvars = [['300_hPa_GPH', '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind',
 percents = [0., 10., 20., 30., 40., 50., 60., 70., 80., 90.]
 uh_thresh = [25., 40., 100.]
 nbrs = [30.0]
-pperfnbrs = [80.0]
+pperfnbrs = [81.0]
 rfunctions = ["UH Coverage"] # , "UH Maximum"]
 analysis = ["WRF"] #, "RAP"]
 analysis_fhr = 0
@@ -100,7 +100,7 @@ for rfunc in rfunctions:
                    os.remove(outpath)
                 post.storePracPerfSPCGrid(init, [rtime],
                                    str(outpath), nbrhd=pperfnbr,
-                                   dx=80., # Using 80-km SPC grid for AMS results
+                                   dx=81., # Using 81-km SPC grid for AMS results
                                    sixhour=sixhour,
                                    wrfrefpath='/lustre/scratch/aucolema/2016052600/wrfoutREFd2')
                                    #dx=sub.getHorizGridSpacingD2()/1000.,

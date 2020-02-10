@@ -9,7 +9,7 @@ from netCDF4 import Dataset
 import numpy as np
 import os
 from datetime import timedelta
-from wrf_ens_tools.calc import FSS, ReliabilityTotal, scipyReliabilityRbox
+from wrf_ens_tools.calc import FSS, ReliabilityTotal
 import cartopy.crs as ccrs
 import cartopy.feature as cfeat
 # import cmocean
