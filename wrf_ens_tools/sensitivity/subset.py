@@ -316,7 +316,7 @@ class Subset:
         os.chdir(probdir)
         print("Calculating probs for: ", members)
         # If semi-idealized, remove truth member from membership
-        if self._semi_idealized:
+        if self._semi_idealized or self._idealized:
             self._fullens = self._fullens[self._fullens != self._truth_member]
         if len(members) == len(self._fullens):
             fname = "fullens_probs.in"
