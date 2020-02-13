@@ -595,7 +595,8 @@ def FSS(fcstprobarray, obarray):
 
     Outputs
     -------
-    returns fss as a float
+    Returns fss as a float for cases in which there are nonzero probabilities for
+    one or both the observations and forecast. Otherwise, np.nan is returned.
     """
     # First calculate FBS (Fractions Brier Score) on whole grid
     probs = fcstprobarray
@@ -618,6 +619,7 @@ def FSS(fcstprobarray, obarray):
         print("FSS and num points: ", fss, ',', npts)
     else:
         print('NULL time/case, cannot calculate FSS')
+        return np.nan
 
     return fss
 
