@@ -575,6 +575,42 @@ def dist_mask(xind, yind, xpts, ypts, r):
     """
     return (np.sqrt(((xind - xpts)**2) + ((yind - ypts)**2)) <= r)
 
+def ens_frequency(ens_field, thresh, field='counts'):
+    """
+    Calculate ensemble frequency of a given 2-dimensional variable for a specified threshold.
+
+    The number of ensemble members is inferred by the first dimension of `ens_field`.
+
+    Inputs
+    ------
+    ens_field --------- P x N x M ndarray; the ensemble field to calculate relative
+                        frequencies over. P is the number of ensemble members, N is
+                        the number of grid points in the y-dimension, and M is the
+                        number of grid points in the x-dimension
+    thresh ------------ float; threshold value (greater than or equal to) for which
+                        to calculate ensemble relative frequencies.
+    field ------------- str; return a numpy ndarray according to the following options:
+                        - 'counts' (default): return an N x M array of the ensemble frequency
+                        - 'bins': return a P x N x M array of the binary hits and misses for each ensemble member
+                        - 'probs': return an N x M array of the ensemble relative frequency
+
+    Outputs
+    -------
+    (P) x N x M ndarray; the ensemble frequency/binary/probability field(s)
+    """
+    mask = (ens_field >= thresh)
+    members, ypoints, xpoints = np.asarray(mask).nonzero()
+
+    bins = np.zeros_like(ens_field)
+    bins[members, ypoints, xpoints] = 1.
+
+    if field == 'bins':
+        return bins
+    elif field == 'counts':
+        return np.sum(bins, axis=0)
+    elif field == 'probs':
+        return np.sum(bins, axis=0) / ens_field.shape[0]
+
 #############################################################
 # Begin verification metrics
 #############################################################
