@@ -575,7 +575,7 @@ def dist_mask(xind, yind, xpts, ypts, r):
     """
     return (np.sqrt(((xind - xpts)**2) + ((yind - ypts)**2)) <= r)
 
-def ens_frequency(ens_field, thresh, field='counts'):
+def ens_frequency(ens_field, thresh, field='counts', axis=0):
     """
     Calculate ensemble frequency of a given 2-dimensional variable for a specified threshold.
 
@@ -593,6 +593,7 @@ def ens_frequency(ens_field, thresh, field='counts'):
                         - 'counts' (default): return an N x M array of the ensemble frequency
                         - 'bins': return a P x N x M array of the binary hits and misses for each ensemble member
                         - 'probs': return an N x M array of the ensemble relative frequency
+    axis -------------- int; axis of ensemble member dimension
 
     Outputs
     -------
@@ -607,9 +608,9 @@ def ens_frequency(ens_field, thresh, field='counts'):
     if field == 'bins':
         return bins
     elif field == 'counts':
-        return np.sum(bins, axis=0)
+        return np.sum(bins, axis=axis)
     elif field == 'probs':
-        return np.sum(bins, axis=0) / ens_field.shape[0]
+        return np.sum(bins, axis=axis) / ens_field.shape[axis]
 
 #############################################################
 # Begin verification metrics
