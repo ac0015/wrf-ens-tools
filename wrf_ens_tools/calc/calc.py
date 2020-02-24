@@ -579,7 +579,8 @@ def ens_frequency(ens_field, thresh, field='counts', axis=0):
     """
     Calculate ensemble frequency of a given 2-dimensional variable for a specified threshold.
 
-    The number of ensemble members is inferred by the first dimension of `ens_field`.
+    The number of ensemble members is inferred by the first dimension of `ens_field`,
+    unless the axis argument is specified.
 
     Inputs
     ------
@@ -593,7 +594,7 @@ def ens_frequency(ens_field, thresh, field='counts', axis=0):
                         - 'counts' (default): return an N x M array of the ensemble frequency
                         - 'bins': return a P x N x M array of the binary hits and misses for each ensemble member
                         - 'probs': return an N x M array of the ensemble relative frequency
-    axis -------------- int; axis of ensemble member dimension
+    axis -------------- int; axis of ensemble member dimension. Default is 0
 
     Outputs
     -------
