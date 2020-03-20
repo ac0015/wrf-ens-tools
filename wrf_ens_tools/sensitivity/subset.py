@@ -17,6 +17,7 @@ from wrf_ens_tools.plots import plotProbs, plotDiff, plotSixPanels
 from wrf_ens_tools.calc import *
 from wrf_ens_tools.post import process_wrf, postTTUWRFanalysis, postIdealizedAnalysis
 from netCDF4 import Dataset
+import pandas as pd
 # from profilehooks import profile
 import xarray as xr
 import time
@@ -1308,3 +1309,96 @@ class Subset:
             ds.close()
 
             return
+
+    def store_uhcov_mae_w_lsrs(self, outpath, inc_sub=True,
+                                append=False):
+        """
+        Calculates and stores mean absolute error of UH coverage using
+        number of gridded (onto native WRF grid) storm reports within
+        response box as the observation.
+
+        Inputs
+        ------
+        outpath --- absolute file path to store mean absolute error result
+        inc_sub --- boolean specifying whether to calculate mean absolute
+                    error for the subset as well as the full ensemble.
+                    Default is true
+        append ---- boolean indicating whether csv file specified in outpath
+                    already exists and should be appended to, or whether a new
+                    file is being created. Default is to write a new file
+
+        Outputs
+        -------
+        Returns NULL, but stores MAE result to a csv file
+        """
+        # Get sens object and double-check response function is correct
+        S = self.getSens()
+        if S.getSixHour():
+            assert(S.getRString() == "6-hr UH Coverage")
+        else:
+            assert(S.getRString() == "1-hr UH Coverage")
+
+        # Define full ensemble and subset members
+        if inc_sub:
+            # Ensure subset has already been generated
+            assert(len(self.getSubMembers()) > 0)
+            sub_members = self.getSubMembers() # subset mems
+        else:
+            sub_members = None
+        fens_members = self.getFullEns() # full ensemble mems
+
+        wrfref_d2 = xr.open_dataset(S.getRefFileD2())
+        lons = wrfref_d2["XLONG"][0]
+        lats = wrfref_d2["XLAT"][0]
+        print("Lat Shape:", np.shape(lats))
+
+        # Get response box bounds for masking LSR grid
+        llon, ulon, llat, ulat = S.getRbox()
+        lonmask = (lons > llon) & (lons < ulon)
+        latmask = (lats > llat) & (lats < ulat)
+        mask = lonmask & latmask
+
+        # Grab SPC reports for valid time frame
+        lsr_grid = calc.nearest_neighbor_spc(runinitdate=S.getRunInit(),
+                    sixhr=S.getSixHour(), rtime=S.getRTime(),
+                    wrfrefpath=S.getRefFileD2())
+        lsr_rbox = lsr_grid[mask]
+        print("LSR Grid Rbox Shape:", np.shape(lsr_rbox))
+        lsr_count_rbox = np.sum(lsr_rbox)
+        print("LSR Count within Rbox:", lsr_count_rbox)
+
+        # Pull UH Coverage values
+        rvals = xr.open_dataset(S.getDir() + "Rvals.nc")
+        forecasts = rvals["UH_COV"][:]
+        full_ens_fcsts = forecasts[fens_members-1]
+        print("Full ensemble coverage values:", full_ens_fcsts)
+
+        # Calculate mean absolute error values
+        fens_mae = calc.mae(predictions=full_ens_fcsts,
+                            targets=np.ones_like(full_ens_fcsts)*lsr_count_rbox)
+        print("Full ensemble MAE:", fens_mae)
+
+        if inc_sub:
+            sub_fcsts = forecasts[sub_members - 1]
+            sub_mae = calc.mae(predictions=sub_fcsts,
+                                targets=np.ones_like(sub_fcsts)*lsr_count_rbox)
+            print("Subset MAE:", sub_mae)
+        else:
+            sub_mae = np.nan
+        rvals.close()
+
+        # If appending, read in the csv as pandas dataframe first
+        if append:
+            df = pd.read_csv(outpath)
+            df.append({'rfunc': S.getRString(),
+                        'fens_mae': fens_mae,
+                        'sub_mae': sub_mae})
+            df.to_csv(outpath)
+        else:
+            df = pd.DataFrame({'rfunc': S.getRString(),
+                        'fens_mae': fens_mae,
+                        'sub_mae': sub_mae})
+            df.to_csv(outpath)
+        df.close()
+
+        return

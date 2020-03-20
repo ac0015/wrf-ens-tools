@@ -1108,6 +1108,31 @@ def mse(predictions, targets, axis=None, nan=False):
         mse_data = np.nanmean(((predictions - targets) ** 2), axis=axis)
     return mse_data
 
+def mae(predictions, targets, axis=None, nan=False):
+    """
+    Mean Absolute Error (MAE)
+
+    Calculates MAE on grid or timeseries
+
+    Inputs
+    ------
+    predictions --- array, forecast variable array.
+    targets ------- array, observation variable array.
+    axis ---------- tuple, optional. Axes over which to perform calculation.
+                    If none, MAE calculated over entire array.
+    nan ----------- bool, optional. Determines if nan values in inputs should
+                    result in nan output. Default is to ignore nan points.
+
+    Outputs
+    -------
+    Returns mean absolute error of predictions
+    """
+    if nan:
+        mae_data = np.mean((np.abs(predictions - targets)), axis=axis)
+    else:
+        mae_data = np.nanmean((np.abs(predictions - targets)), axis=axis)
+    return mae_data
+
 ######### GridRad Reflectivity Verification Metrics ##################
 def calc_subset_avg_response_rbox(member_list, rvalues_ncfile, rfuncstr):
     """
