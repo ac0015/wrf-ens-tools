@@ -22,6 +22,7 @@ from datetime import timedelta, datetime
 from wrf_ens_tools.calc import calc
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import pyproj
 import cartopy.crs as ccrs
 import cartopy.feature as cfeat
 from .interp_analysis import subprocess_cmd, reflectivity_to_eventgrid, bilinear_interp
@@ -1202,7 +1203,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
     :param nest: string, 'moving' for a moving nest simulation
     :param dask: bool, Specify whether to use dask as backend
     :param chunks: optional dictionary to specify chunks by each dimension. See dask chunks.
-    :return: Xarray Dataset of CF-compliant WRF output stored as dask arrays
+    :return: Xarray Dataset of CF-compliant WRF output
     """
     # open the input file
     # specify chunks if not given
@@ -1224,16 +1225,22 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
     else:
         coords['latitude'] = (('y', 'x'), indata.XLAT[0].data)
         coords['longitude'] = (('y', 'x'), indata.XLONG[0].data)
-    coords['bottom_top'] = (('z'), indata.bottom_top.data)
+    coords['z'] = (('z'), indata.bottom_top.data)
     coords['time'] = indata.XTIME.data
     ds = xr.Dataset(coords=coords)
 
     # copy original global attributes and make CF-compliant
     for attr in indata.attrs:
-        if attr == 'CEN_LAT':
-            ds.attrs['central_latitude'] = indata.CEN_LAT
-        elif attr == 'CEN_LON':
-            ds.attrs['central_longitude'] = indata.CEN_LON
+        if attr == 'START_DATE':
+            ds.attrs['nest_start_date'] = datetime.strptime(indata.START_DATE,
+                                                            '%Y-%m-%d_%H:%M:%S').strftime('%Y-%m-%dT%H:%M:%S')
+        elif attr == 'SIMULATION_START_DATE':
+            ds.attrs['simulation_start_date'] = datetime.strptime(indata.SIMULATION_START_DATE,
+                                                                  '%Y-%m-%d_%H:%M:%S').strftime('%Y-%m-%dT%H:%M:%S')
+        elif attr == 'MOAD_CEN_LAT':
+            ds.attrs['central_latitude'] = indata.MOAD_CEN_LAT
+        # elif attr == 'CEN_LON':
+        #     ds.attrs['central_longitude'] = indata.CEN_LON
         elif attr == 'TRUELAT1':
             ds.attrs['true_latitude_1'] = indata.TRUELAT1
         elif attr == 'TRUELAT2':
@@ -1242,8 +1249,33 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
             ds.attrs['standard_longitude'] = indata.STAND_LON
         elif attr == 'MAP_PROJ_CHAR':
             ds.attrs['projection'] = indata.MAP_PROJ_CHAR
+        elif attr == 'WEST-EAST_GRID_DIMENSION':
+            continue
+        elif attr =='SOUTH-NORTH_GRID_DIMENSION':
+            continue
+        elif attr == 'BOTTOM-TOP_GRID_DIMENSION':
+            continue
+        elif attr == 'DX':
+            ds.attrs['dx'] = indata.DX
+        elif attr == 'DY':
+            ds.attrs['dy'] = indata.DY
         else:
             ds.attrs[attr] = indata.attrs[attr]
+
+    # Calculate the model projection x and y coordinates
+    # TODO: Add support form more projections
+    r = 6370000
+    x_model, y_model = lcc_projection(indata, r=r)
+    ds['x'] = x_model
+    ds.x.attrs['description'] = 'Projection x coordinate'
+    ds['y'] = y_model
+    ds.y.attrs['description'] = 'Projection y coordinate'
+
+    # add projection information
+    ds.attrs['projection'] = 'Lambert Conformal Conic'
+    ds.attrs['semimajor_axis'] = r
+    ds.attrs['semiminor_axis'] = r
+    ds.attrs['ellipse'] = 'sphere'
 
     # combine and write precipitation variables
     ds['total_precipitation'] = (('time', 'y', 'x'), (indata.RAINC + indata.RAINNC).data)
@@ -1282,22 +1314,44 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         warnings.warn('Unknown moisture unit {} encountered'.format(indata.Q2.units))
         ds.mixing_ratio_2m.attrs['units'] = indata.Q2.units
 
-    # 10-m winds
-    ds['u_10m'] = (('time', 'y', 'x'), indata.U10.data)
-    ds.u_10m.attrs['description'] = 'U-component of wind at 10 meters'
+    # 10-m winds on model grid
+    u10 = indata.U10
+    v10 = indata.V10
+    ds['u_10m'] = (('time', 'y', 'x'), u10.data)
+    ds.u_10m.attrs['description'] = 'U-component of wind at 10 meters (model-relative)'
     if indata.U10.units == 'm s-1':
         ds.u_10m.attrs['units'] = 'meter/second'
     else:
         warnings.warn('Unknown velocity units {} encountered'.format(indata.U10.units))
         ds.u_10m.attrs['units'] = indata.U10.units
 
-    ds['v_10m'] = (('time', 'y', 'x'), indata.V10.data)
-    ds.v_10m.attrs['description'] = 'V-component of wind at 10 meters'
+    ds['v_10m'] = (('time', 'y', 'x'), v10.data)
+    ds.v_10m.attrs['description'] = 'V-component of wind at 10 meters (model-relative)'
     if indata.V10.units == 'm s-1':
         ds.v_10m.attrs['units'] = 'meter/second'
     else:
         warnings.warn('Unknown velocity units {} encountered'.format(indata.V10.units))
         ds.v_10m.attrs['units'] = indata.V10.units
+
+    # 10-m winds earth relative
+    sinalpha = indata.SINALPHA
+    cosalpha = indata.COSALPHA
+    u10_rot, v10_rot = earth_relative_winds(u10, v10, sinalpha, cosalpha)
+    ds['u_10m_earth_relative'] = (('time', 'y', 'x'), u10_rot.data.compute())
+    ds.u_10m_earth_relative.attrs['description'] = 'U-component of wind at 10 meters (earth-relative)'
+    if indata.U10.units == 'm s-1':
+        ds.u_10m_earth_relative.attrs['units'] = 'meter/second'
+    else:
+        warnings.warn('Unknown velocity units {} encountered'.format(indata.U10.units))
+        ds.u_10m_earth_relative.attrs['units'] = indata.U10.units
+
+    ds['v_10m_earth_relative'] = (('time', 'y', 'x'), v10_rot.data.compute())
+    ds.v_10m_earth_relative.attrs['description'] = 'V-component of wind at 10 meters (earth-relative)'
+    if indata.V10.units == 'm s-1':
+        ds.v_10m_earth_relative.attrs['units'] = 'meter/second'
+    else:
+        warnings.warn('Unknown velocity units {} encountered'.format(indata.V10.units))
+        ds.v_10m_earth_relative.attrs['units'] = indata.V10.units
 
     # Surface pressure
     ds['surface_pressure'] = (('time', 'y', 'x'), indata.PSFC.data)
@@ -1311,7 +1365,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
     # Get full 3-D variables
     # Height - from geopotential
     hgt = (indata.PH.data + indata.PHB.data) / 9.81
-    ds['height_mean_sea_level'] = (('time', 'bottom_top', 'y', 'x'), destagger(hgt, 1))
+    ds['height_mean_sea_level'] = (('time', 'z', 'y', 'x'), destagger(hgt, 1))
     ds.height_mean_sea_level.attrs['Description'] = 'Height above mean sea level'
     ds.height_mean_sea_level.attrs['units'] = 'meter'
 
@@ -1327,7 +1381,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
     # Pressure
     # TODO: find a way to not assume units of input data
     p = indata.P + indata.PB
-    ds['pressure'] = (('time', 'bottom_top', 'y', 'x'), p.data)
+    ds['pressure'] = (('time', 'z', 'y', 'x'), p.data)
     ds.pressure.attrs['description'] = 'Full model pressure'
     if indata.P.units == 'Pa':
         ds.pressure.attrs['units'] = 'Pascal'
@@ -1336,7 +1390,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         ds.pressure.attrs['units'] = indata.P.units
 
     # Vapor mixing ratio
-    ds['vapor_mixing_ratio'] = (('time', 'bottom_top', 'y', 'x'), indata.QVAPOR.data)
+    ds['vapor_mixing_ratio'] = (('time', 'z', 'y', 'x'), indata.QVAPOR.data)
     ds.vapor_mixing_ratio.attrs['description'] = 'Water vapor mixing ratio'
     if indata.QVAPOR.units == 'kg kg-1':
         ds.vapor_mixing_ratio.attrs['units'] = 'dimensionless'
@@ -1345,7 +1399,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         ds.vapor_mixing_ratio.attrs['units'] = indata.QVAPOR.units
 
     # Cloud mixing ratio
-    ds['cloud_mixing_ratio'] = (('time', 'bottom_top', 'y', 'x'), indata.QCLOUD.data)
+    ds['cloud_mixing_ratio'] = (('time', 'z', 'y', 'x'), indata.QCLOUD.data)
     ds.cloud_mixing_ratio.attrs['description'] = 'Cloud water mixing ratio'
     if indata.QCLOUD.units == 'kg kg-1':
         ds.cloud_mixing_ratio.attrs['units'] = 'dimensionless'
@@ -1354,7 +1408,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         ds.cloud_mixing_ratio.attrs['units'] = indata.QCLOUD.units
 
     # Rain mixing ratio
-    ds['rain_mixing_ratio'] = (('time', 'bottom_top', 'y', 'x'), indata.QRAIN.data)
+    ds['rain_mixing_ratio'] = (('time', 'z', 'y', 'x'), indata.QRAIN.data)
     ds.rain_mixing_ratio.attrs['description'] = 'Rain water mixing ratio'
     if indata.QRAIN.units == 'kg kg-1':
         ds.rain_mixing_ratio.attrs['units'] = 'dimensionless'
@@ -1364,7 +1418,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
 
     # Ice mixing ratio
     try:
-        ds['ice_mixing_ratio'] = (('time', 'bottom_top', 'y', 'x'), indata.QICE.data)
+        ds['ice_mixing_ratio'] = (('time', 'z', 'y', 'x'), indata.QICE.data)
         ds.ice_mixing_ratio.attrs['description'] = 'Ice mixing ratio'
         if indata.QICE.units == 'kg kg-1':
             ds.ice_mixing_ratio.attrs['units'] = 'dimensionless'
@@ -1376,7 +1430,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
 
     # Snow mixing ratio
     try:
-        ds['snow_mixing_ratio'] = (('time', 'bottom_top', 'y', 'x'), indata.QSNOW.data)
+        ds['snow_mixing_ratio'] = (('time', 'z', 'y', 'x'), indata.QSNOW.data)
         ds.snow_mixing_ratio.attrs['description'] = 'Snow mixing ratio'
         if indata.QSNOW.units == 'kg kg-1':
             ds.snow_mixing_ratio.attrs['units'] = 'dimensionless'
@@ -1388,7 +1442,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
 
     # Graupel mixing ratio
     try:
-        ds['graupel_mixing_ratio'] = (('time', 'bottom_top', 'y', 'x'), indata.QGRAUP.data)
+        ds['graupel_mixing_ratio'] = (('time', 'z', 'y', 'x'), indata.QGRAUP.data)
         ds.graupel_mixing_ratio.attrs['description'] = 'Graupel mixing ratio'
         if indata.QGRAUP.units == 'kg kg-1':
             ds.graupel_mixing_ratio.attrs['units'] = 'dimensionless'
@@ -1400,7 +1454,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
 
     # Ice number concentration
     try:
-        ds['ice_number_concentration'] = (('time', 'bottom_top', 'y', 'x'), indata.QNICE.data)
+        ds['ice_number_concentration'] = (('time', 'z', 'y', 'x'), indata.QNICE.data)
         ds.ice_number_concentration.attrs['description'] = 'Ice number concentration'
         if indata.QNICE.units == '  kg-1':
             ds.ice_number_concentration.attrs['units'] = 'kiligram**-1'
@@ -1412,7 +1466,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
 
     # Rain number concentration
     try:
-        ds['rain_number_concentration'] = (('time', 'bottom_top', 'y', 'x'), indata.QNRAIN.data)
+        ds['rain_number_concentration'] = (('time', 'z', 'y', 'x'), indata.QNRAIN.data)
         ds.rain_number_concentration.attrs['description'] = 'Rain number concentration'
         if indata.QNRAIN.units == '  kg(-1)':
             ds.rain_number_concentration.attrs['units'] = 'kiligram**-1'
@@ -1423,9 +1477,12 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         pass
 
     # Unstagger the staggered-grid variables
-    # u-component of wind
-    ds['u_wind'] = (('time', 'bottom_top', 'y', 'x'), destagger(indata.U.data, -1))
-    ds.u_wind.attrs['description'] = 'U-component of wind'
+    # u-component of wind model relative
+    u = destagger(indata.U.data, -1)
+    v = destagger(indata.V.data, -2)
+
+    ds['u_wind'] = (('time', 'z', 'y', 'x'), u)
+    ds.u_wind.attrs['description'] = 'U-component of wind (model-relative)'
     if indata.U.units == 'm s-1':
         ds.u_wind.attrs['units'] = 'meter/second'
     else:
@@ -1433,16 +1490,36 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         ds.u_wind.attrs['units'] = indata.U.units
 
     # v-component of wind
-    ds['v_wind'] = (('time', 'bottom_top', 'y', 'x'), destagger(indata.V.data, -2))
-    ds.v_wind.attrs['description'] = 'V-component of wind'
+    ds['v_wind'] = (('time', 'z', 'y', 'x'), v)
+    ds.v_wind.attrs['description'] = 'V-component of wind (model-relative)'
     if indata.V.units == 'm s-1':
         ds.v_wind.attrs['units'] = 'meter/second'
     else:
         warnings.warn('Unknown velocity unit {} encountered'.format(indata.V.units))
         ds.v_wind.attrs['units'] = indata.V.units
 
+    # earth-relative
+    u_rot, v_rot = earth_relative_winds(u, v, sinalpha.data[:, np.newaxis, ], cosalpha.data[:, np.newaxis, ])
+
+    ds['u_wind_earth_relative'] = (('time', 'z', 'y', 'x'), u_rot)
+    ds.u_wind_earth_relative.attrs['description'] = 'U-component of wind (earth-relative)'
+    if indata.U.units == 'm s-1':
+        ds.u_wind_earth_relative.attrs['units'] = 'meter/second'
+    else:
+        warnings.warn('Unknown velocity unit {} encountered'.format(indata.U.units))
+        ds.u_wind_earth_relative.attrs['units'] = indata.U.units
+
+    # v-component of wind
+    ds['v_wind_earth_relative'] = (('time', 'z', 'y', 'x'), v_rot)
+    ds.v_wind_earth_relative.attrs['description'] = 'V-component of wind (earth-relative)'
+    if indata.V.units == 'm s-1':
+        ds.v_wind_earth_relative.attrs['units'] = 'meter/second'
+    else:
+        warnings.warn('Unknown velocity unit {} encountered'.format(indata.V.units))
+        ds.v_wind_earth_relative.attrs['units'] = indata.V.units
+
     # w-component of wind
-    ds['w_wind'] = (('time', 'bottom_top', 'y', 'x'), destagger(indata.W.data, -3))
+    ds['w_wind'] = (('time', 'z', 'y', 'x'), destagger(indata.W.data, -3))
     ds.w_wind.attrs['description'] = 'W-component of wind'
     if indata.W.units == 'm s-1':
         ds.w_wind.attrs['units'] = 'meter/second'
@@ -1450,9 +1527,16 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         warnings.warn('Unknown velocity unit {} encountered'.format(indata.W.units))
         ds.w_wind.attrs['units'] = indata.W.units
 
+    # COSALPHA and SINALPHA for model grid to earth-relative rotation
+    ds['cosalpha'] = (('time', 'y', 'x'), sinalpha)
+    ds.cosalpha.attrs['description'] = 'Cosine Alpha term for earth-relative grid rotation'
+
+    ds['sinalpha'] = (('time', 'y', 'x'), cosalpha)
+    ds.sinalpha.attrs['description'] = 'Sine Alpha term for earth-relative grid rotation'
+
     # TKE from PBL scheme
     try:
-        ds['tke'] = (('time', 'bottom_top', 'y', 'x'), destagger(indata.TKE_PBL.data, -3))
+        ds['tke'] = (('time', 'z', 'y', 'x'), destagger(indata.TKE_PBL.data, -3))
         ds.tke.attrs['description'] = 'Turbulence Kinetic Energy (TKE) from PBL scheme'
         if indata.TKE_PBL.units == 'm2 s-2':
             ds.w_wind.attrs['units'] = 'meter**2/second**2'
@@ -1500,3 +1584,43 @@ def nearest_lat_lon_index(point, latitudes, longitudes):
     closest = get_nearest(da.array(point).reshape(-1, 1).transpose(), stacked)
     idx = np.unravel_index(closest[0], latitudes.shape)
     return idx
+
+
+def earth_relative_winds(u, v, sinalpha, cosalpha):
+    """
+    Rotate model-relative wind components to earth-relative
+
+    :param u: x-wind component (model relative)
+    :param v: y-wind component (model relative)
+    :param sinalpha:
+    :param cosalpha:
+    :return: u_rot, v_rot: u and v wind components rotated to earth relative
+    """
+    u_rot = u * cosalpha - v * sinalpha
+    v_rot = v * cosalpha + u * sinalpha
+    return u_rot, v_rot
+
+
+def lcc_projection(indata, r=6370000):
+    """
+    Define projection coordinates for WRF Lambert Conformal Conic grid
+    :param indata: Xarray.Dataset containing WRF output as netCDF
+    :param r: radius of earth (spherical)
+    :return: x, y: x and y coordinate arrays
+    """
+    wrf_proj = pyproj.Proj(proj='lcc',  # projection type: Lambert Conformal Conic
+                           lat_1=indata.TRUELAT1, lat_2=indata.TRUELAT2,  # Cone intersects with the sphere
+                           lat_0=indata.MOAD_CEN_LAT, lon_0=indata.STAND_LON,  # Center point
+                           a=r, b=r)  # This is it! The Earth is a perfect sphere
+    wgs_proj = pyproj.Proj(proj='latlong', datum='WGS84')
+    e, n = pyproj.transform(wgs_proj, wrf_proj, indata.CEN_LON, indata.CEN_LAT)
+    # Grid parameters
+    dx, dy = indata.DX, indata.DY
+    nx, ny = float(indata.dims['west_east']), float(indata.dims['south_north'])
+    # Down left corner of the domain
+    x0 = -(nx - 1) / 2. * dx + e
+    y0 = -(ny - 1) / 2. * dy + n
+
+    x = da.arange(nx) * dx + x0
+    y = da.arange(ny) * dy + y0
+    return x, y
