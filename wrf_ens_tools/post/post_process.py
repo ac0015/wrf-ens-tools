@@ -1263,7 +1263,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
             ds.attrs[attr] = indata.attrs[attr]
 
     # Calculate the model projection x and y coordinates
-    # TODO: Add support form more projections
+    # TODO: Add support for more projections
     r = 6370000
     x_model, y_model = lcc_projection(indata, r=r)
     ds['x'] = x_model
