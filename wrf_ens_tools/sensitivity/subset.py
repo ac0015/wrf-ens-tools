@@ -522,7 +522,8 @@ class Subset:
             outfile_writer.writerow(entry)
         return
 
-    def storeUHStatsNetCDF(self, outpath, pperfpath, reliabilityobpath):
+    def storeUHStatsNetCDF(self, outpath, pperfpath, reliabilityobpath,
+                            bssobpath):
         """
         Stores UH verification stats to netCDF4 file using xarray.
 
@@ -533,6 +534,8 @@ class Subset:
                             gridded data
         reliabilityobpath - absolute filepath for reliability observational
                             point data on ensemble grid
+        bssobpath --------- absolute filepath for Brier skill score
+                            observation grid
 
         Outputs
         -------
@@ -596,6 +599,57 @@ class Subset:
             s_fcstfreq_rbox = sub_reliability["fcst_frequency"]
             s_ob_hr_rbox = sub_reliability["ob_hit_rate"]
             sub_reliability.close()
+            ####################################################################
+            # Calculate BSS using probabilistic forecast and binary observations
+            # Same as FSS except binary obs
+            ####################################################################
+            fens_prob_ds = xr.open_dataset(fensprobpath)
+            sub_prob_ds = xr.open_dataset(subprobpath)
+            # Choose correct indices based on variable and threshold
+            probinds = {'reflectivity': {40: 0, 50: 5},
+                        'updraft_helicity': {25: 1, 40: 2, 100: 3},
+                        'wind_speed': {40: 4}}
+            index = probinds['updraft_helicity'][self._thresh]
+            # Pull probabilities
+            fens_probs = np.asarray(fens_prob_ds["P_HYD"])[0, index]
+            sub_probs = np.asarray(sub_prob_ds["P_HYD"])[0, index]
+            fens_prob_ds.close(); sub_prob_ds.close()
+            # Open binary observation dataset
+            bss_ob_ds = xr.open_dataset(bssobpath)
+            bss_obs = np.asarray(bss_ob_ds["nearest_neighbor"][0])
+            bss_ob_ds.close()
+            # Mask obs/fcst
+            ref_ds = xr.open_dataset(S.getRefFileD2())
+            lons = np.asarray(ref_ds["XLONG"].values[0], dtype=float)
+            lats = np.asarray(ref_ds["XLAT"].values[0], dtype=float)
+            ref_ds.close()
+            llon, ulon, llat, ulat = np.array(S.getRbox(), dtype=float)
+            lonmask = (lons > llon) & (lons < ulon)
+            latmask = (lats > llat) & (lats < ulat)
+            # print(f"llon: {llon}, ulon: {ulon}, llat: {llat}, ulat: {ulat}")
+            mask = lonmask & latmask
+            # print(lons[mask], lats[mask])
+            del(lons); del(lats)
+            # masked_fens_probs = fens_probs.to_masked_array()/100.
+            # masked_fens_probs.soften_mask()
+            # masked_fens_probs.mask = ~mask
+            # masked_sub_probs = sub_probs.to_masked_array()/100.
+            # masked_sub_probs.soften_mask()
+            # masked_sub_probs.mask = ~mask
+            # masked_obs = bss_obs.to_masked_array()
+            # masked_obs.soften_mask()
+            # masked_obs.mask = ~(mask & (bss_obs <= 9e36))
+            masked_fens_probs = np.ma.masked_array(fens_probs/100., mask=~mask)
+            masked_sub_probs = np.ma.masked_array(sub_probs/100., mask=~mask)
+            masked_obs = np.ma.masked_array(bss_obs, mask=~(mask & (bss_obs <= 9e36)))
+            # print("NANMAX BSS OBS", np.nanmax(masked_obs))
+            # print("Rbox probs", masked_fens_probs)
+            # Calculate BSS!
+            f_bss_rbox = FSS(masked_fens_probs, masked_obs)
+            print(f"Full Ens BSS: {f_bss_rbox}")
+            s_bss_rbox = FSS(masked_sub_probs, masked_obs)
+            print(f"Subset BSS: {s_bss_rbox}")
+            ####################################################################
         else:
             raise FileNotFoundError('Please run storePracPerf() or \
             set correct obpath.')
@@ -621,6 +675,8 @@ class Subset:
                  'Subset_FSS_Total': (['subset'], np.atleast_1d(s_fss_tot)),
                  'Subset_FSS_Rbox': (['subset'], np.atleast_1d(s_fss_rbox)),
                  'Prac_Perf_Sigma': (['subset'], np.atleast_1d(sig[0])),
+                 'Full_Ens_BSS_Rbox': (['subset'], np.atleast_1d(f_bss_rbox)),
+                 'Subset_BSS_Rbox': (['subset'], np.atleast_1d(s_bss_rbox)),
                  'Neighborhood': (['subset'], np.atleast_1d(self._nbr)),
                  'Response_Thresh': (['subset'], np.atleast_1d(self._thresh)),
                  'Subset_Fcst_Freq_Rbox': (['subset', 'prob_bins'],
@@ -1261,7 +1317,8 @@ class Subset:
                                                 np.atleast_2d(f_ob_hr_rbox))},
                                         coords={'run': S.getRunInit(),
                                                 'bins': prob_bins,
-                                                'rbox': ['llon', 'ulon', 'llat', 'ulat']})
+                                                'rbox': ['llon', 'ulon',
+                                                        'llat', 'ulat']})
                     print(new_ds)
                     fens_reliability.close()
                     og_fens_ds = xr.concat([og_ds, new_ds], dim='rthresh',
@@ -1310,8 +1367,7 @@ class Subset:
 
             return
 
-    def store_uhcov_mae_w_lsrs(self, outpath, inc_sub=True,
-                                append=False):
+    def store_uhcov_mae_w_lsrs(self, obpath, outpath):
         """
         Calculates and stores mean absolute error of UH coverage using
         number of gridded (onto native WRF grid) storm reports within
@@ -1319,13 +1375,9 @@ class Subset:
 
         Inputs
         ------
+        obpath ---- absolute file path containing nearest_neighbor variable
+                    with gridded binary observations
         outpath --- absolute file path to store mean absolute error result
-        inc_sub --- boolean specifying whether to calculate mean absolute
-                    error for the subset as well as the full ensemble.
-                    Default is true
-        append ---- boolean indicating whether csv file specified in outpath
-                    already exists and should be appended to, or whether a new
-                    file is being created. Default is to write a new file
 
         Outputs
         -------
@@ -1333,24 +1385,22 @@ class Subset:
         """
         # Get sens object and double-check response function is correct
         S = self.getSens()
-        if S.getSixHour():
-            assert(S.getRString() == "6-hr UH Coverage")
-        else:
-            assert(S.getRString() == "1-hr UH Coverage")
+        # if S.getSixHour():
+        #     assert(S.getRString() == "6-hr UH Coverage")
+        # else:
+        #     assert(S.getRString() == "1-hr UH Coverage")
 
         # Define full ensemble and subset members
-        if inc_sub:
-            # Ensure subset has already been generated
-            assert(len(self.getSubMembers()) > 0)
-            sub_members = self.getSubMembers() # subset mems
-        else:
-            sub_members = None
+        # Ensure subset has already been generated
+        assert(len(self.getSubMembers()) > 0)
+        sub_members = self.getSubMembers() # subset mems
         fens_members = self.getFullEns() # full ensemble mems
 
         wrfref_d2 = xr.open_dataset(S.getRefFileD2())
         lons = wrfref_d2["XLONG"][0]
         lats = wrfref_d2["XLAT"][0]
         print("Lat Shape:", np.shape(lats))
+        wrfref_d2.close()
 
         # Get response box bounds for masking LSR grid
         llon, ulon, llat, ulat = S.getRbox()
@@ -1359,9 +1409,7 @@ class Subset:
         mask = lonmask & latmask
 
         # Grab SPC reports for valid time frame
-        lsr_grid = calc.nearest_neighbor_spc(runinitdate=S.getRunInit(),
-                    sixhr=S.getSixHour(), rtime=S.getRTime(),
-                    wrfrefpath=S.getRefFileD2())
+        lsr_grid = xr.open_dataset(obpath)["nearest_neighbor"].values[0]
         lsr_rbox = lsr_grid[mask]
         print("LSR Grid Rbox Shape:", np.shape(lsr_rbox))
         lsr_count_rbox = np.sum(lsr_rbox)
@@ -1369,7 +1417,7 @@ class Subset:
 
         # Pull UH Coverage values
         rvals = xr.open_dataset(S.getDir() + "Rvals.nc")
-        forecasts = rvals["UH_COV"][:]
+        forecasts = np.asarray(rvals["UH_COV"])
         full_ens_fcsts = forecasts[fens_members-1]
         print("Full ensemble coverage values:", full_ens_fcsts)
 
@@ -1378,27 +1426,87 @@ class Subset:
                             targets=np.ones_like(full_ens_fcsts)*lsr_count_rbox)
         print("Full ensemble MAE:", fens_mae)
 
-        if inc_sub:
-            sub_fcsts = forecasts[sub_members - 1]
-            sub_mae = calc.mae(predictions=sub_fcsts,
+        sub_fcsts = forecasts[sub_members - 1]
+        sub_mae = calc.mae(predictions=sub_fcsts,
                                 targets=np.ones_like(sub_fcsts)*lsr_count_rbox)
-            print("Subset MAE:", sub_mae)
-        else:
-            sub_mae = np.nan
+        print("Subset MAE:", sub_mae)
         rvals.close()
 
-        # If appending, read in the csv as pandas dataframe first
-        if append:
-            df = pd.read_csv(outpath)
-            df.append({'rfunc': S.getRString(),
-                        'fens_mae': fens_mae,
-                        'sub_mae': sub_mae})
-            df.to_csv(outpath)
+        # # If appending, read in the csv as pandas dataframe first
+        # if append:
+        #     df = pd.read_csv(outpath)
+        #     df.append({'rfunc': [S.getRString()],
+        #                 'fens_mae': [fens_mae],
+        #                 'sub_mae': [sub_mae]})
+        #     df.to_csv(outpath)
+        # else:
+        #     df = pd.DataFrame({'rfunc': [S.getRString()],
+        #                 'fens_mae': [fens_mae],
+        #                 'sub_mae': [sub_mae]})
+        #     df.to_csv(outpath)
+
+        # Create entry as xarray dataset
+        sens_vars = np.empty((1, 30), dtype="U30")
+        sens_vars[0, :len(self._sensvars)] = np.asarray(self._sensvars[:])
+        sub_mems = np.zeros((1,len(self._fullens)), dtype=int) * np.NaN
+        sub_mems[0, :len(self.getSubMembers())] = np.asarray(self.getSubMembers())
+        sub_cov = np.zeros((1,len(self._fullens)), dtype=int) * np.NaN
+        sub_cov[0, :len(self.getSubMembers())] = sub_fcsts
+        ds = xr.Dataset({'Sens_Time': (['subset'], np.atleast_1d(S.getSensTime())),
+                 'Subset_Size': (['subset'], np.atleast_1d(self._subsize)),
+                 'Analysis': (['subset'], np.atleast_1d(self._analysis_type)),
+                 'Sens_Vars':  (['subset', 'sensvar'],
+                                np.atleast_2d(sens_vars)),
+                 'Subset_Method': (['subset'],
+                    np.atleast_1d(list(self._methodchoices.keys())[self._method-1])),
+                 'Sens_Threshold': (['subset'], np.atleast_1d(self._percent)),
+                 'Response_Func': (['subset'], np.atleast_1d(S.getRString())),
+                 'Response_Time': (['subset'], np.atleast_1d(S.getRTime())),
+                 'Response_Box': (['subset', 'rbox'],
+                                    np.atleast_2d(S.getRbox())),
+                 'LSR_Count_Rbox': (['subset'], np.atleast_1d(lsr_count_rbox)),
+                 'Subset_UH_Coverage_Rbox': (['subset', 'submems'],
+                                            np.atleast_2d(sub_cov)),
+                 'Full_Ens_MAE_LSR_Rbox': (['subset'], np.atleast_1d(fens_mae)),
+                 'Subset_MAE_LSR_Rbox': (['subset'], np.atleast_1d(sub_mae)),
+                 'Neighborhood': (['subset'], np.atleast_1d(self._nbr)),
+                 'Response_Thresh': (['subset'], np.atleast_1d(self._thresh)),
+                 'Subset_Members': (['subset', 'submems'],
+                                    sub_mems)},
+                 coords={'run': S.getRunInit(),
+                         # 'subset': np.arange(1),
+                         'rbox': ['llon', 'ulon', 'llat', 'ulat']})
+        if os.path.exists(outpath):
+            og_ds = xr.open_dataset(outpath)
+            print("Opened original dataset...")
+            # Check first to see if we need to add full ens reliability
+            print("Current Rthresh",
+                self._thresh, "Current Full Ens Thresh Vals",
+                og_ds.Full_Ens_Response_Thresh.values)
+            if (self._thresh not in og_ds.Full_Ens_Response_Thresh.values):
+                new_ds = xr.Dataset({'Full_Ens_Response_Thresh': (['rthresh'],
+                                            np.atleast_1d(self._thresh))},
+                                    coords={'run': S.getRunInit(),
+                                            'rbox': ['llon', 'ulon', 'llat', 'ulat']})
+                og_fens_ds = xr.concat([og_ds, new_ds], dim='rthresh',
+                                data_vars=['Full_Ens_Response_Thresh'])
+                new_ds.close()
+                print("Concatenated rel to appending dataset...\n", og_fens_ds)
+                # Finally concatenate with existing netCDF dataset
+                ds = xr.concat([og_fens_ds, ds], dim='subset', data_vars='minimal')
+                og_fens_ds.close()
+            else:
+                ds = xr.concat([og_ds, ds], dim='subset', data_vars='minimal')
+            og_ds.close()
+            print("Appended new dataset to original dataset...\n\n", ds)
+            # os.popen("rm {}".format(outpath))
         else:
-            df = pd.DataFrame({'rfunc': S.getRString(),
-                        'fens_mae': fens_mae,
-                        'sub_mae': sub_mae})
-            df.to_csv(outpath)
-        df.close()
+            ds["Full_Ens_Response_Thresh"] = (('rthresh'),
+                                        np.atleast_1d(self._thresh))
+        print("FINAL DATASET TO WRITE:", ds)
+        ds.to_netcdf("test.nc", unlimited_dims=['subset', 'rthresh'],
+                    format="NETCDF4", mode='w')
+        os.rename("test.nc", outpath)
+        ds.close()
 
         return

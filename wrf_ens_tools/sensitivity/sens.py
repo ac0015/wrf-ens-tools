@@ -109,8 +109,12 @@ class Sens:
             self._dir = ensbasepath
 
         # Initialize a few attributes
-        self._rfuncstr = rfuncstr
+        self._rfuncstr = rfuncstr # if infile=True, this will be overriden
         self._rthresh = rthresh
+        if sixhr:
+            self._sixhr = True
+        else:
+            self._sixhr = False
 
         # If esens.in or subsetGUI.txt available, use them
         if infile:
@@ -123,6 +127,10 @@ class Sens:
                 self._ulat = float(esens_in[4])
                 self._ensnum = 42
                 self._senstime = senstime
+                if sixhr:
+                    self._rfuncstr = "6-hr " + self._rfuncstr
+                else:
+                    self._rfuncstr = "1-hr " + self._rfuncstr
             else:
                 esens_in = np.genfromtxt(self._dir + 'esens.in', dtype=str)
                 self._ensnum = int(esens_in[0])
@@ -154,13 +162,6 @@ class Sens:
             self._ensnum = ensnum
             self._senstime = senstime
             self._rthresh = rthresh
-
-        if sixhr:
-            self._sixhr = True
-            self._rfuncstr = "6-hr " + self._rfuncstr
-        else:
-            self._sixhr = False
-            self._rfuncstr = "1-hr " + self._rfuncstr
 
         self._fhrs = 48
         self._date = submit

@@ -587,7 +587,8 @@ def storePracPerfNativeGrid(modelinit, fcsthrs, outpath, nbrhd, dx,
                 netCDF output.
     nbrhd ----- neighborhoood distance in km to use for
                 the distance-based sigma of the Gaussian
-                kernel.
+                kernel. ***Also gets used as a search
+                distance for the LSR grid***
     dx -------- horizontal grid-spacing on model domain to
                 serve as the denominator of the Gaussian
                 kernel.
@@ -600,8 +601,8 @@ def storePracPerfNativeGrid(modelinit, fcsthrs, outpath, nbrhd, dx,
     netcdf_out = Dataset(outpath, "w", format="NETCDF4")
     # Calculate pperf to pull lat/lon data
     sigma = nbrhd / dx
-    pperf, lon, lat = calc_prac_perf_native_grid(modelinit, sixhour,
-                                     fcsthrs[0], sigma=sigma)
+    pperf, lon, lat = calc.calc_prac_perf(modelinit, sixhour,
+                                     fcsthrs[0], nbrhd=nbrhd, sigma=sigma)
     # Set up netCDF
     netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
     netcdf_out.createDimension('Time', len(fcsthrs))
@@ -614,8 +615,9 @@ def storePracPerfNativeGrid(modelinit, fcsthrs, outpath, nbrhd, dx,
     sig[:] = sigma
     # Populate outfile with pperf
     for t in range(len(fcsthrs)):
-        pperf, lon, lat = calc_prac_perf_native_grid(modelinit,
-                                sixhour, fcsthrs[t], sigma=sigma)
+        pperf, lon, lat = calc.calc_prac_perf(modelinit,
+                                sixhour, fcsthrs[t], nbrhd=nbrhd, sigma=sigma)
+        print(f"PPERF MAX: {np.max(pperf)} at f{fcsthrs[t]}, SIXHOUR={sixhour}")
         pperfout[t] = pperf[:]*100.
         times[t] = fcsthrs[t]
     netcdf_out.close()
@@ -758,9 +760,10 @@ def storeIdealizedPracPef(sspf_arr, outlats, outlons, outpath,
     return
 
 # Interpolate storm reports to nearest grid point - mainly for reliability calc
-def storeNearestNeighbor(modelinit, fcsthrs, outpath, sixhour=True,
+def storeNearestNeighbor(modelinit, fcsthr, outpath, sixhour=True,
                             wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs'
-                                       '/2016050800/wrfoutREFd2'):
+                                       '/2016050800/wrfoutREFd2',
+                            nbrhd=0.):
     '''
     Calculate hourly nearest neighbor on WRF grid.
     Save to netCDF file for verification.
@@ -772,13 +775,19 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, sixhour=True,
                 (WRF run doesn't need to exist,
                 just need baseline datetime to add
                 forecast hours to.)
-    fsthrs ---- list of forecast hour integers, or
+    fsthr ---- forecast hour integer in
                 hours since modelinit time.
     outpath --- string specifying absolute path of
                 netCDF output.
     sixhour --- boolean specifying whether to store
                 six-hour or one-hour period of
                 nearest neighbor storm reports
+    nbrhd ----- optional float to inflate observation
+                frequency grid by applying a searching
+                distance to observations. If this is
+                done for verification, neighborhood
+                should match probability neighborhood.
+                CURRENTLY ONLY COMPATIBLE W UH
 
     Outputs
     -------
@@ -787,23 +796,25 @@ def storeNearestNeighbor(modelinit, fcsthrs, outpath, sixhour=True,
     # Create outfile
     netcdf_out = Dataset(outpath, "w", format="NETCDF4")
     # Calculate pperf to pull lat/lon data
-    grid = calc.nearest_neighbor_spc(modelinit, sixhour, fcsthrs[0], nbrhd=0.,
+    grid = calc.nearest_neighbor_ttu(modelinit, sixhour, fcsthr,
+                                nbrhd=nbrhd,
                                 wrfrefpath=wrfrefpath)
     # Set up netCDF
     netcdf_out.START_DATE = modelinit.strftime('%Y-%m-%d_%H:%M:%S')
     netcdf_out.SIXHOUR = str(sixhour)
-    netcdf_out.createDimension('Time', len(fcsthrs))
+    netcdf_out.createDimension('Time', 1)
     netcdf_out.createDimension('south_north', len(grid[:,0]))
     netcdf_out.createDimension('west_east', len(grid[0,:]))
     times = netcdf_out.createVariable('fhr', int, ('Time'))
     nearest_out = netcdf_out.createVariable('nearest_neighbor', float, ('Time',
                                             'south_north', 'west_east'))
-    # Populate outfile with pperf
-    for t in range(len(fcsthrs)):
-        grid = calc.nearest_neighbor_spc(modelinit, sixhour, fcsthrs[t], nbrhd=0.,
+    # Populate outfile with nearest neighbor
+    grid = calc.nearest_neighbor_ttu(modelinit, sixhour, fcsthr, nbrhd=nbrhd,
                                     wrfrefpath=wrfrefpath)
-        nearest_out[t] = grid[:]
-        times[t] = fcsthrs[t]
+    print(f"nearest neighbor min/max: {grid.min()}/{grid.max()}")
+    nearest_out[:] = grid[:]
+    times[:] = fcsthr
+    print(nearest_out)
     netcdf_out.close()
     return
 
@@ -813,7 +824,8 @@ def storeNearestNeighborFortran(modelinit, fcsthr, outpath,
                             wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs'
                                        '/2016050800/wrfoutREFd2',
                             interpgridradfiles=None,
-                            reflthreshold=None):
+                            reflthreshold=None,
+                            nbrhd=0.):
     '''
     Calculate hourly nearest neighbor on WRF grid.
     Overwrite to WRF outfile for fast verification
@@ -844,6 +856,12 @@ def storeNearestNeighborFortran(modelinit, fcsthr, outpath,
     reflthreshold --------- if verifying reflectivity, will need
                             to provide an exceedance threshold as
                             a float.
+    nbrhd ----------------- optional float to inflate observation
+                            frequency grid by applying a searching
+                            distance to observations. If this is
+                            done for verification, neighborhood
+                            should match probability neighborhood.
+                            CURRENTLY ONLY COMPATIBLE W UH
 
     Outputs
     -------
@@ -858,7 +876,8 @@ def storeNearestNeighborFortran(modelinit, fcsthr, outpath,
 
     # Populate outfile with gridded observations
     if variable == "updraft_helicity":
-        grid = calc.nearest_neighbor_spc(modelinit, sixhour, fcsthr, nbrhd=0.,
+        grid = calc.nearest_neighbor_ttu(modelinit, sixhour, fcsthr,
+                                    nbrhd=nbrhd,
                                     wrfrefpath=wrfrefpath)
     elif variable == "reflectivity":
         grid = reflectivity_to_eventgrid(interp_gridradfiles=interpgridradfiles,

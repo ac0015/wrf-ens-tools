@@ -45,7 +45,7 @@ def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
     return interpolated_z
 
 
-def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
+def nearest_neighbor_ttu(runinitdate, sixhr, rtime, nbrhd=0.,
                          wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs'
                                     '/2016050800/wrfoutREFd2'):
     """
@@ -154,7 +154,7 @@ def nearest_neighbor_spc(runinitdate, sixhr, rtime, nbrhd=0.,
 
         return grid
 
-def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
+def calc_prac_perf(runinitdate, sixhr, rtime, nbrhd=0., sigma=2):
     """
     Implementation of SPC practically perfect
     calculations adapted from SPC code
@@ -171,6 +171,9 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     rtime -------- time (in num fcst hrs
                     from runinit) to obtain six hr
                     or one hr practically perfect.
+    nbrhd -------- optional float depicting searching
+                    distance for LSRs on observation
+                    grid
     sigma -------- optional float specifying sigma
                     to use for Gaussian filter.
 
@@ -222,6 +225,8 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
     dat = Dataset(wrffile)
     wrflon = dat.variables['XLONG'][0]
     wrflat = dat.variables['XLAT'][0]
+    # Convert DX to kilometers
+    dx = dat.DX / 1000.
     dat.close()
 
     #If there aren't any reports, practically perfect is zero across grid
@@ -263,8 +268,11 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2):
             xind, yind = np.unravel_index(inds[mask], X.shape)
 
             # Loop through all points and increment that grid cell by 1
+            gridinds = np.indices(grid.shape)
             for xi, yi in zip(xind, yind):
-                grid[xi, yi] = 1
+                dists = np.sqrt(((gridinds[0,:,:]-xi)*dx)**2 + ((gridinds[1,:,:]-yi)*dx)**2)
+                inds = np.where(dists <= nbrhd)
+                grid[inds] = 1
 
             # Gaussian smoother over our grid to create practically perfect probs
             pperf = ndimage.gaussian_filter(grid, sigma=sigma, order=0)
@@ -621,7 +629,8 @@ def FSS(fcstprobarray, obarray):
     """
     Calculates fractions skill score for a probabilstic
     ensemble forecast, Obs need to be pre-interpolated
-    to native model grid.
+    to native model grid. By default, ignores masked
+    values
 
     Inputs
     ------
@@ -648,8 +657,11 @@ def FSS(fcstprobarray, obarray):
     if (np.max(obs) > 0.) or (np.max(probs) > 0.):
         for i in range(len(fcstprobarray[0,:])):
             for j in range(len(fcstprobarray[:,0])):
-                fbs += (probs[j,i] - obs[j,i])**2
-                fbs_worst += probs[j,i]**2 + obs[j,i]**2
+                # print(probs[j,i], obs[j,i])
+                if (np.isnan(probs[j,i]) == False) and (np.isnan(obs[j,i]) == False):
+                    # print(probs[j,i], obs[j,i])
+                    fbs += (probs[j,i] - obs[j,i])**2
+                    fbs_worst += probs[j,i]**2 + obs[j,i]**2
         print('FBS: ', fbs)
         fbs, fbs_worst = fbs/npts, fbs_worst/npts
         # Use FBS and FBS worst to calculate FSS for whole grid
@@ -706,13 +718,6 @@ def FSSnetcdf(probpath, obspath, fhr, var='updraft_helicity',
                         If using probability calculations from
                         this library, probabilities will by default
                         be stored in 'P_HYD'.
-    smooth_w_sigma ---- optional smoothing parameter. If you
-                        want to smooth the ensemble probs,
-                        replace None default with a sigma
-                        value for the standard deviation of
-                        the Gaussian kernel to use. Otherwise
-                        FSS is calculated with the raw ensemble
-                        probabilities.
 
     Outputs
     -------
@@ -764,6 +769,7 @@ def FSSnetcdf(probpath, obspath, fhr, var='updraft_helicity',
     npts = len(lats[:,0]) * len(lons[0,:])
     fbs = 0.
     fbs_worst = 0.
+    fss_all = 0.
     print('Max ens probs and max ob probs: ', np.max(probs), np.max(obs[obind]))
 
     # Calculate FBS at each grid point and aggregate.
@@ -874,7 +880,7 @@ def ReliabilityTotal(probpath, runinitdate, fhr, obpath=None, var='updraft_helic
             inds = np.where(times == fhr)
             grid = dat.variables['nearest_neighbor'][inds][0]
         else:
-            grid = nearest_neighbor_spc(runinitdate, sixhr, fhr, nbrhd=0.)
+            grid = nearest_neighbor_ttu(runinitdate, sixhr, fhr, nbrhd=0.)
     else:
         raise ValueError('Sorry, support for {} is not yet built in.'.format(var))
     # Pull and splice probability variable
@@ -987,7 +993,7 @@ def ReliabilityRbox(probpath, runinitdate, fhr,  rboxpath, obpath=None,
             inds = np.where(times == fhr)
             grid = dat.variables['nearest_neighbor'][inds][0]
         else:
-            grid = nearest_neighbor_spc(runinitdate, sixhr, fhr, nbrhd=0.)
+            grid = nearest_neighbor_ttu(runinitdate, sixhr, fhr, nbrhd=0.)
     else:
         raise ValueError('Sorry, support for {} is not yet built in.'.format(var))
     # Pull and splice probability variable
