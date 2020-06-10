@@ -4,7 +4,7 @@ Code for testing routines found in post_process.py
 import numpy as np
 from numpy.testing import assert_almost_equal, assert_array_almost_equal
 
-from wrf_ens_tools.post import destagger, earth_relative_winds, nearest_lat_lon_index
+from wrf_ens_tools.post import destagger, earth_relative_winds, nearest_lat_lon_index, simulated_reflectivity
 
 
 def test_nearest_lat_lon_index():
@@ -52,3 +52,14 @@ def test_earth_relative_winds_rotation():
     u_rot, v_rot = earth_relative_winds(u, v, sinalpha, cosalpha)
     assert_almost_equal(u_rot, 9.799999999999999)
     assert_almost_equal(v_rot, 10.1)
+
+
+def test_dbz():
+    """test the simulated reflectivity function"""
+    t = np.linspace(250, 300, 4).reshape((2, 2))
+    p = np.linspace(99000, 101000, 4).reshape((2, 2))
+    q = np.linspace(0.003, 0.005, 4).reshape((2, 2))
+    dbz = simulated_reflectivity(p, t, q, q)
+    truth = np.array([[53.88258, 54.96516],
+                     [55.821661, 56.522127]])
+    assert_array_almost_equal(dbz, truth)
