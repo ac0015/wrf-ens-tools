@@ -13,21 +13,29 @@ suite.
 """
 
 import numpy as np
+from sklearn.neighbors import BallTree
+import dask.array as da
 import xarray as xr
+import metpy.constants as constants
 import wrf
 from netCDF4 import Dataset
 from datetime import timedelta, datetime
 from wrf_ens_tools.calc import calc
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import pyproj
 import cartopy.crs as ccrs
 import cartopy.feature as cfeat
 from .interp_analysis import subprocess_cmd, reflectivity_to_eventgrid, bilinear_interp
 # import pyart
 import os
 from shutil import copyfile
+import warnings
 
 package_dir = os.path.dirname(os.path.abspath(__file__))
+
+P0 = constants.P0.to('Pa').m
+kappa = constants.kappa.m
 
 dflt_var = ['td2', 'T2']
 dflt_pres = [300., 500., 700., 850., 925.]
@@ -1148,3 +1156,740 @@ def plot_refl_rbox(gridradfiles, rboxpath, zlev):
         figname = 'gridrad_zlev{}_valid{}.png'.format(zlev, time)
         plt.savefig(figname)
     return
+
+
+def destagger(var, stagger_dim):
+    """Return the variable on the unstaggered grid.
+    This function destaggers the variable by taking the average of the
+    values located on either side of the grid box. Copied from wrf-python
+    (https://github.com/NCAR/wrf-python/blob/master/src/wrf/destag.py)
+
+    :param var: `xarray.DataArray`: A variable
+            on a staggered grid.
+    :param stagger_dim: (:obj:`int`): The dimension index to destagger.
+            Negative values can be used to choose dimensions referenced
+            from the right hand side (-1 is the rightmost dimension).
+    Returns:
+        `xarray.DataArray`: The destaggered variable.
+    """
+    var_shape = var.shape
+    num_dims = var.ndim
+    stagger_dim_size = var_shape[stagger_dim]
+
+    # Dynamically building the range slices to create the appropriate
+    # number of ':'s in the array accessor lists.
+    # For example, for a 3D array, the calculation would be
+    # result = .5 * (var[:,:,0:stagger_dim_size-2]
+    #                    + var[:,:,1:stagger_dim_size-1])
+    # for stagger_dim=2.  So, full slices would be used for dims 0 and 1, but
+    # dim 2 needs the special slice.
+    full_slice = slice(None)
+    slice1 = slice(0, stagger_dim_size - 1, 1)
+    slice2 = slice(1, stagger_dim_size, 1)
+
+    # default to full slices
+    dim_ranges_1 = [full_slice] * num_dims
+    dim_ranges_2 = [full_slice] * num_dims
+
+    # for the stagger dim, insert the appropriate slice range
+    dim_ranges_1[stagger_dim] = slice1
+    dim_ranges_2[stagger_dim] = slice2
+
+    result = .5*(var[tuple(dim_ranges_1)] + var[tuple(dim_ranges_2)])
+
+    return result
+
+
+def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
+    """
+    Runs the WRF Post Processor
+    :param inname: string of input file path
+    :param nest: string, 'moving' for a moving nest simulation
+    :param dask: bool, Specify whether to use dask as backend
+    :param chunks: optional dictionary to specify chunks by each dimension. See dask chunks.
+    :return: Xarray Dataset of CF-compliant WRF output
+    """
+    # open the input file
+    # specify chunks if not given
+    if dask:
+        if chunks is None:
+            chunks = {'Time': 50, 'west_east': 100, 'west_east_stag': 100,
+                      'south_north': 100, 'south_north_stag': 100,
+                      'bottom_top': 10, 'bottom_top_stag': 10}
+
+        indata = xr.open_dataset(inname, chunks=chunks)
+    else:
+        indata = xr.open_dataset(inname, chunks=chunks)
+
+    # Set up output dataset with desired dimensions
+    coords = {}
+    if nest == 'moving':
+        coords['latitude'] = (('time', 'y', 'x'), indata.XLAT.data)
+        coords['longitude'] = (('time', 'y', 'x'), indata.XLONG.data)
+    else:
+        coords['latitude'] = (('y', 'x'), indata.XLAT[0].data)
+        coords['longitude'] = (('y', 'x'), indata.XLONG[0].data)
+    coords['z'] = (('z'), indata.bottom_top.data)
+    coords['time'] = indata.XTIME.data
+    ds = xr.Dataset(coords=coords)
+
+    # copy original global attributes and make CF-compliant
+    for attr in indata.attrs:
+        if attr == 'START_DATE':
+            ds.attrs['nest_start_date'] = datetime.strptime(indata.START_DATE,
+                                                            '%Y-%m-%d_%H:%M:%S').strftime('%Y-%m-%dT%H:%M:%S')
+        elif attr == 'SIMULATION_START_DATE':
+            ds.attrs['simulation_start_date'] = datetime.strptime(indata.SIMULATION_START_DATE,
+                                                                  '%Y-%m-%d_%H:%M:%S').strftime('%Y-%m-%dT%H:%M:%S')
+        elif attr == 'MOAD_CEN_LAT':
+            ds.attrs['central_latitude'] = indata.MOAD_CEN_LAT
+        # elif attr == 'CEN_LON':
+        #     ds.attrs['central_longitude'] = indata.CEN_LON
+        elif attr == 'TRUELAT1':
+            ds.attrs['true_latitude_1'] = indata.TRUELAT1
+        elif attr == 'TRUELAT2':
+            ds.attrs['true_latitude_2'] = indata.TRUELAT2
+        elif attr == 'STAND_LON':
+            ds.attrs['standard_longitude'] = indata.STAND_LON
+        elif attr == 'MAP_PROJ_CHAR':
+            ds.attrs['projection'] = indata.MAP_PROJ_CHAR
+        elif attr == 'WEST-EAST_GRID_DIMENSION':
+            continue
+        elif attr =='SOUTH-NORTH_GRID_DIMENSION':
+            continue
+        elif attr == 'BOTTOM-TOP_GRID_DIMENSION':
+            continue
+        elif attr == 'DX':
+            ds.attrs['dx'] = indata.DX
+        elif attr == 'DY':
+            ds.attrs['dy'] = indata.DY
+        else:
+            ds.attrs[attr] = indata.attrs[attr]
+
+    # Calculate the model projection x and y coordinates
+    # TODO: Add support for more projections
+    r = 6370000
+    x_model, y_model = lcc_projection(indata, r=r)
+    ds['x'] = x_model
+    ds.x.attrs['description'] = 'Projection x coordinate'
+    ds['y'] = y_model
+    ds.y.attrs['description'] = 'Projection y coordinate'
+
+    # add projection information
+    ds.attrs['projection'] = 'Lambert Conformal Conic'
+    ds.attrs['semimajor_axis'] = r
+    ds.attrs['semiminor_axis'] = r
+    ds.attrs['ellipse'] = 'sphere'
+
+    # combine and write precipitation variables
+    ds['total_precipitation'] = (('time', 'y', 'x'), (indata.RAINC + indata.RAINNC).data)
+    ds.total_precipitation.attrs['description'] = 'Total Accumulated Precipitation'
+    if indata.RAINC.units == 'mm':
+        ds.total_precipitation.attrs['units'] = 'milimeter'
+    else:
+        warnings.warn('Unknown precipitation unit {} encountered'.format(indata.RAINC.units))
+        ds.total_precipitation.attrs['units'] = indata.RAINC.units
+
+    # get surface variables
+    # 2-m temperature
+    ds['temperature_2m'] = (('time', 'y', 'x'), indata.T2.data)
+    ds.temperature_2m.attrs['description'] = 'Temperature at 2 meters'
+    if indata.T2.units == 'K':
+        ds.temperature_2m.attrs['units'] = 'kelvin'
+    else:
+        warnings.warn('Unknown temperature unit {} encountered'.format(indata.T2.units))
+        ds.temperature_2m.attrs['units'] = indata.T2.units
+
+    # 2-m potential temperature
+    ds['potential_temperature_2m'] = (('time', 'y', 'x'), indata.TH2.data)
+    ds.potential_temperature_2m.attrs['description'] = 'Potential temperature at 2 meters'
+    if indata.TH2.units == 'K':
+        ds.potential_temperature_2m.attrs['units'] = 'kelvin'
+    else:
+        warnings.warn('Unknown temperature unit {} encountered'.format(indata.TH2.units))
+        ds.potential_temperature_2m.attrs['units'] = indata.TH2.units
+
+    # 2-m mixing ratio
+    ds['mixing_ratio_2m'] = (('time', 'y', 'x'), indata.Q2.data)
+    ds.mixing_ratio_2m.attrs['description'] = 'Mixing ratio at 2 meters'
+    if indata.Q2.units == 'kg kg-1':
+        ds.mixing_ratio_2m.attrs['units'] = 'dimensionless'
+    else:
+        warnings.warn('Unknown moisture unit {} encountered'.format(indata.Q2.units))
+        ds.mixing_ratio_2m.attrs['units'] = indata.Q2.units
+
+    # 10-m winds on model grid
+    u10 = indata.U10.data
+    v10 = indata.V10.data
+    ds['u_10m'] = (('time', 'y', 'x'), u10)
+    ds.u_10m.attrs['description'] = 'U-component of wind at 10 meters (model-relative)'
+    if indata.U10.units == 'm s-1':
+        ds.u_10m.attrs['units'] = 'meter/second'
+    else:
+        warnings.warn('Unknown velocity units {} encountered'.format(indata.U10.units))
+        ds.u_10m.attrs['units'] = indata.U10.units
+
+    ds['v_10m'] = (('time', 'y', 'x'), v10)
+    ds.v_10m.attrs['description'] = 'V-component of wind at 10 meters (model-relative)'
+    if indata.V10.units == 'm s-1':
+        ds.v_10m.attrs['units'] = 'meter/second'
+    else:
+        warnings.warn('Unknown velocity units {} encountered'.format(indata.V10.units))
+        ds.v_10m.attrs['units'] = indata.V10.units
+
+    # 10-m winds earth relative
+    sinalpha = indata.SINALPHA.data
+    cosalpha = indata.COSALPHA.data
+    u10_rot, v10_rot = earth_relative_winds(u10, v10, sinalpha, cosalpha)
+    ds['u_10m_earth_relative'] = (('time', 'y', 'x'), u10_rot)
+    ds.u_10m_earth_relative.attrs['description'] = 'U-component of wind at 10 meters (earth-relative)'
+    if indata.U10.units == 'm s-1':
+        ds.u_10m_earth_relative.attrs['units'] = 'meter/second'
+    else:
+        warnings.warn('Unknown velocity units {} encountered'.format(indata.U10.units))
+        ds.u_10m_earth_relative.attrs['units'] = indata.U10.units
+
+    ds['v_10m_earth_relative'] = (('time', 'y', 'x'), v10_rot)
+    ds.v_10m_earth_relative.attrs['description'] = 'V-component of wind at 10 meters (earth-relative)'
+    if indata.V10.units == 'm s-1':
+        ds.v_10m_earth_relative.attrs['units'] = 'meter/second'
+    else:
+        warnings.warn('Unknown velocity units {} encountered'.format(indata.V10.units))
+        ds.v_10m_earth_relative.attrs['units'] = indata.V10.units
+
+    # Surface pressure
+    ds['surface_pressure'] = (('time', 'y', 'x'), indata.PSFC.data)
+    ds.surface_pressure.attrs['description'] = 'Pressure at surface (not reduced)'
+    if indata.PSFC.units == 'Pa':
+        ds.surface_pressure.attrs['units'] = 'Pascal'
+    else:
+        warnings.warn('Unknown pressure unit {} encountered'.format(indata.PSFC.units))
+        ds.surface_pressure.attrs['units'] = indata.PSFC.units
+
+    # Get full 3-D variables
+    # Height - from geopotential
+    hgt = (indata.PH.data + indata.PHB.data) / 9.81
+    ds['height_mean_sea_level'] = (('time', 'z', 'y', 'x'), destagger(hgt, 1))
+    ds.height_mean_sea_level.attrs['Description'] = 'Height above mean sea level'
+    ds.height_mean_sea_level.attrs['units'] = 'meter'
+
+    # Terrain height
+    ds['terrain_height'] = (('time', 'y', 'x'), indata.HGT.data)
+    ds.terrain_height.attrs['Description'] = 'Height of model terrain'
+    if indata.HGT.units == 'm':
+        ds.terrain_height.attrs['units'] = 'meter'
+    else:
+        warnings.warn('Unknown height unit {} encountered'.format(indata.HGT.units))
+        ds.terrain_height.attrs['units'] = indata.HGT.units
+
+    # Pressure
+    # TODO: find a way to not assume units of input data
+    p = indata.P + indata.PB
+    ds['pressure'] = (('time', 'z', 'y', 'x'), p.data)
+    ds.pressure.attrs['description'] = 'Full model pressure'
+    if indata.P.units == 'Pa':
+        ds.pressure.attrs['units'] = 'Pascal'
+    else:
+        warnings.warn('Unknown pressure unit {} encountered'.format(indata.P.units))
+        ds.pressure.attrs['units'] = indata.P.units
+
+    theta = indata.T + 300.
+    ds['potential_temperature'] = (('time', 'z', 'y', 'x'), theta.data)
+    if indata.T.units == 'K':
+        ds.potential_temperature.attrs['units'] = 'Kelvin'
+    else:
+        warnings.warn('Unknown pressure unit {} encountered'.format(indata.T.units))
+        ds.potential_temperature.attrs['units'] = indata.T.units
+
+    temp = temperature_from_potential_temperature(ds.pressure, ds.potential_temperature, )
+    ds['temperature'] = temp
+    if indata.T.units == 'K':
+        ds.temperature.attrs['units'] = 'Kelvin'
+    else:
+        warnings.warn('Unknown pressure unit {} encountered'.format(indata.T.units))
+        ds.temperature.attrs['units'] = indata.T.units
+
+    # Vapor mixing ratio
+    ds['vapor_mixing_ratio'] = (('time', 'z', 'y', 'x'), indata.QVAPOR.data)
+    ds.vapor_mixing_ratio.attrs['description'] = 'Water vapor mixing ratio'
+    if indata.QVAPOR.units == 'kg kg-1':
+        ds.vapor_mixing_ratio.attrs['units'] = 'dimensionless'
+    else:
+        warnings.warn('Unknown unit {} encountered'.format(indata.QVAPOR.units))
+        ds.vapor_mixing_ratio.attrs['units'] = indata.QVAPOR.units
+
+    # Cloud mixing ratio
+    ds['cloud_mixing_ratio'] = (('time', 'z', 'y', 'x'), indata.QCLOUD.data)
+    ds.cloud_mixing_ratio.attrs['description'] = 'Cloud water mixing ratio'
+    if indata.QCLOUD.units == 'kg kg-1':
+        ds.cloud_mixing_ratio.attrs['units'] = 'dimensionless'
+    else:
+        warnings.warn('Unknown units {} encountered'.format(indata.QCLOUD.units))
+        ds.cloud_mixing_ratio.attrs['units'] = indata.QCLOUD.units
+
+    # Rain mixing ratio
+    ds['rain_mixing_ratio'] = (('time', 'z', 'y', 'x'), indata.QRAIN.data)
+    ds.rain_mixing_ratio.attrs['description'] = 'Rain water mixing ratio'
+    if indata.QRAIN.units == 'kg kg-1':
+        ds.rain_mixing_ratio.attrs['units'] = 'dimensionless'
+    else:
+        warnings.warn('Unknown unit {} encountered'.format(indata.QRAIN.units))
+        ds.rain_mixing_ratio.attrs['units'] = indata.QRAIN.units
+
+    # Ice mixing ratio
+    try:
+        ds['ice_mixing_ratio'] = (('time', 'z', 'y', 'x'), indata.QICE.data)
+        ds.ice_mixing_ratio.attrs['description'] = 'Ice mixing ratio'
+        if indata.QICE.units == 'kg kg-1':
+            ds.ice_mixing_ratio.attrs['units'] = 'dimensionless'
+        else:
+            warnings.warn('Unknown unit {} encountered'.format(indata.QICE.units))
+            ds.ice_mixing_ratio.attrs['units'] = indata.QICE.units
+    except AttributeError:
+        pass
+
+    # Snow mixing ratio
+    try:
+        ds['snow_mixing_ratio'] = (('time', 'z', 'y', 'x'), indata.QSNOW.data)
+        ds.snow_mixing_ratio.attrs['description'] = 'Snow mixing ratio'
+        qsnow = indata.QSNOW.data
+        if indata.QSNOW.units == 'kg kg-1':
+            ds.snow_mixing_ratio.attrs['units'] = 'dimensionless'
+        else:
+            warnings.warn('Unknown unit {} encountered'.format(indata.QSNOW.units))
+            ds.snow_mixing_ration.attrs['units'] = indata.QSNOW.units
+    except AttributeError:
+        qsnow = None
+
+    # Graupel mixing ratio
+    try:
+        ds['graupel_mixing_ratio'] = (('time', 'z', 'y', 'x'), indata.QGRAUP.data)
+        ds.graupel_mixing_ratio.attrs['description'] = 'Graupel mixing ratio'
+        qgraupel = indata.QGRAUP.data
+        if indata.QGRAUP.units == 'kg kg-1':
+            ds.graupel_mixing_ratio.attrs['units'] = 'dimensionless'
+        else:
+            warnings.warn('Unknown unit {} encountered'.format(indata.QGRAUP.units))
+            ds.graupel_mixing_ratio.attrs['units'] = indata.QGRAUP.units
+    except AttributeError:
+        qgraupel = None
+
+    # Ice number concentration
+    try:
+        ds['ice_number_concentration'] = (('time', 'z', 'y', 'x'), indata.QNICE.data)
+        ds.ice_number_concentration.attrs['description'] = 'Ice number concentration'
+        if indata.QNICE.units == '  kg-1':
+            ds.ice_number_concentration.attrs['units'] = 'kiligram**-1'
+        else:
+            warnings.warn('Unknown unit {} encountered'.format(indata.QNICE.units))
+            ds.ice_number_concentration.attrs['units'] = indata.QNICE.units
+    except AttributeError:
+        pass
+
+    # Rain number concentration
+    try:
+        ds['rain_number_concentration'] = (('time', 'z', 'y', 'x'), indata.QNRAIN.data)
+        ds.rain_number_concentration.attrs['description'] = 'Rain number concentration'
+        if indata.QNRAIN.units == '  kg(-1)':
+            ds.rain_number_concentration.attrs['units'] = 'kiligram**-1'
+        else:
+            warnings.warn('Unknown unit {} encountered'.format(indata.QNRAIN.units))
+            ds.rain_number_concentration.attrs['units'] = indata.QNRAIN.units
+    except AttributeError:
+        pass
+
+    # Unstagger the staggered-grid variables
+    # u-component of wind model relative
+    u = destagger(indata.U.data, -1)
+    v = destagger(indata.V.data, -2)
+
+    ds['u_wind'] = (('time', 'z', 'y', 'x'), u)
+    ds.u_wind.attrs['description'] = 'U-component of wind (model-relative)'
+    if indata.U.units == 'm s-1':
+        ds.u_wind.attrs['units'] = 'meter/second'
+    else:
+        warnings.warn('Unknown velocity unit {} encountered'.format(indata.U.units))
+        ds.u_wind.attrs['units'] = indata.U.units
+
+    # v-component of wind
+    ds['v_wind'] = (('time', 'z', 'y', 'x'), v)
+    ds.v_wind.attrs['description'] = 'V-component of wind (model-relative)'
+    if indata.V.units == 'm s-1':
+        ds.v_wind.attrs['units'] = 'meter/second'
+    else:
+        warnings.warn('Unknown velocity unit {} encountered'.format(indata.V.units))
+        ds.v_wind.attrs['units'] = indata.V.units
+
+    # earth-relative
+    u_rot, v_rot = earth_relative_winds(u, v, sinalpha[:, np.newaxis, ], cosalpha[:, np.newaxis, ])
+
+    ds['u_wind_earth_relative'] = (('time', 'z', 'y', 'x'), u_rot)
+    ds.u_wind_earth_relative.attrs['description'] = 'U-component of wind (earth-relative)'
+    if indata.U.units == 'm s-1':
+        ds.u_wind_earth_relative.attrs['units'] = 'meter/second'
+    else:
+        warnings.warn('Unknown velocity unit {} encountered'.format(indata.U.units))
+        ds.u_wind_earth_relative.attrs['units'] = indata.U.units
+
+    # v-component of wind
+    ds['v_wind_earth_relative'] = (('time', 'z', 'y', 'x'), v_rot)
+    ds.v_wind_earth_relative.attrs['description'] = 'V-component of wind (earth-relative)'
+    if indata.V.units == 'm s-1':
+        ds.v_wind_earth_relative.attrs['units'] = 'meter/second'
+    else:
+        warnings.warn('Unknown velocity unit {} encountered'.format(indata.V.units))
+        ds.v_wind_earth_relative.attrs['units'] = indata.V.units
+
+    # w-component of wind
+    ds['w_wind'] = (('time', 'z', 'y', 'x'), destagger(indata.W.data, -3))
+    ds.w_wind.attrs['description'] = 'W-component of wind'
+    if indata.W.units == 'm s-1':
+        ds.w_wind.attrs['units'] = 'meter/second'
+    else:
+        warnings.warn('Unknown velocity unit {} encountered'.format(indata.W.units))
+        ds.w_wind.attrs['units'] = indata.W.units
+
+    # COSALPHA and SINALPHA for model grid to earth-relative rotation
+    ds['cosalpha'] = (('time', 'y', 'x'), sinalpha)
+    ds.cosalpha.attrs['description'] = 'Cosine Alpha term for earth-relative grid rotation'
+
+    ds['sinalpha'] = (('time', 'y', 'x'), cosalpha)
+    ds.sinalpha.attrs['description'] = 'Sine Alpha term for earth-relative grid rotation'
+
+    # TKE from PBL scheme
+    try:
+        ds['tke'] = (('time', 'z', 'y', 'x'), destagger(indata.TKE_PBL.data, -3))
+        ds.tke.attrs['description'] = 'Turbulence Kinetic Energy (TKE) from PBL scheme'
+        if indata.TKE_PBL.units == 'm2 s-2':
+            ds.w_wind.attrs['units'] = 'meter**2/second**2'
+        else:
+            warnings.warn('Unknown unit {} encountered'.format(indata.TKE_PBL.units))
+            ds.tke.attrs['units'] = indata.TKE_PBL.units
+    except AttributeError:
+        pass
+
+    refl = simulated_reflectivity(ds['pressure'].data, ds.temperature.data, ds['vapor_mixing_ratio'].data,
+                                  ds['rain_mixing_ratio'].data, snow_mixing_ratio=qsnow,
+                                  graupel_mixing_ratio=qgraupel)
+    ds['simulated_reflectivity'] = (('time', 'z', 'y', 'x'), refl)
+    ds.simulated_reflectivity.attrs['units'] = 'dBZ'
+    return ds
+
+
+def get_nearest(src_points, candidates, k_neighbors=1):
+    """Find nearest neighbors for all source points from a set of candidate points"""
+
+    # Create tree from the candidate points
+    tree = BallTree(candidates, leaf_size=15, metric='haversine')
+    distances, indices = tree.query(src_points, k=k_neighbors)
+
+    # Transpose to get distances and indices into arrays
+    distances = distances.transpose()
+    indices = indices.transpose()
+
+    # Get closest indices and distances (i.e. array at index 0)
+    # note: for the second closest points, you would take index 1, etc.
+    closest = indices[0]
+    closest_dist = distances[0]
+
+    # Return indices and distances
+    return closest, closest_dist
+
+
+def nearest_lat_lon_index(point, latitudes, longitudes):
+    """
+    Find the index values of the nearest grid point to a desired point.
+    The Haversine distance formula is used, and inputs of lat/lon pairs are
+    required.
+
+    :param point: list, list of latitude, longitude for desired nearest point
+    :param latitudes: dask array of 2-D latitude grid
+    :param longitudes: dask array of 2-D longitude grid
+    :return: index values of nearest point on grid
+    """
+    stacked = da.stack((latitudes.flatten(), longitudes.flatten())).transpose()
+    closest = get_nearest(da.array(point).reshape(-1, 1).transpose(), stacked)
+    idx = np.unravel_index(closest[0], latitudes.shape)
+    return idx
+
+
+def earth_relative_winds(u, v, sinalpha, cosalpha):
+    """
+    Rotate model-relative wind components to earth-relative
+
+    :param u: x-wind component (model relative)
+    :param v: y-wind component (model relative)
+    :param sinalpha:
+    :param cosalpha:
+    :return: u_rot, v_rot: u and v wind components rotated to earth relative
+    """
+    u_rot = u * cosalpha - v * sinalpha
+    v_rot = v * cosalpha + u * sinalpha
+    return u_rot, v_rot
+
+
+def lcc_projection(indata, r=6370000):
+    """
+    Define projection coordinates for WRF Lambert Conformal Conic grid
+    :param indata: Xarray.Dataset containing WRF output as netCDF
+    :param r: radius of earth (spherical)
+    :return: x, y: x and y coordinate arrays
+    """
+    wrf_proj = pyproj.Proj(proj='lcc',  # projection type: Lambert Conformal Conic
+                           lat_1=indata.TRUELAT1, lat_2=indata.TRUELAT2,  # Cone intersects with the sphere
+                           lat_0=indata.MOAD_CEN_LAT, lon_0=indata.STAND_LON,  # Center point
+                           a=r, b=r)  # This is it! The Earth is a perfect sphere
+    wgs_proj = pyproj.Proj(proj='latlong', datum='WGS84')
+    e, n = pyproj.transform(wgs_proj, wrf_proj, indata.CEN_LON, indata.CEN_LAT)
+    # Grid parameters
+    dx, dy = indata.DX, indata.DY
+    nx, ny = float(indata.dims['west_east']), float(indata.dims['south_north'])
+    # Down left corner of the domain
+    x0 = -(nx - 1) / 2. * dx + e
+    y0 = -(ny - 1) / 2. * dy + n
+
+    x = da.arange(nx) * dx + x0
+    y = da.arange(ny) * dy + y0
+    return x, y
+
+
+def simulated_reflectivity(pressure, temperature, vapor_mixing_ratio, liquid_mixing_ratio, snow_mixing_ratio=None,
+                           graupel_mixing_ratio=None, use_varint=False, use_liqskin=False):
+    """
+    Calculate the simulated reflectivity factor from model output.
+    Ported from RIP fortran calculation used in the WRF-Python package.
+    :param pressure: model pressure in Pa
+    :param temperature: model temperature in Kelvin
+    :param vapor_mixing_ratio: water vapor mixing ratio
+    :param liquid_mixing_ratio: liquid water mixing ratio
+    :param snow_mixing_ratio: snow mixing ratio, optional
+    :param graupel_mixing_ratio: graupel mixing ratio, optional
+    :param use_varint: When set to False,
+        the intercept parameters are assumed constant
+        (as in MM5's Reisner-2 bulk microphysical scheme).
+        When set to True, the variable intercept
+        parameters are used as in the more recent version of Reisner-2
+        (based on Thompson, Rasmussen, and Manning, 2004, Monthly weather
+        Review, Vol. 132, No. 2, pp. 519-542.).
+    :param use_liqskin: When set to True, frozen particles
+        that are at a temperature above freezing are assumed to scatter
+        as a liquid particle.  Set to False to disable.
+
+    This routine computes equivalent reflectivity factor (in dBZ) at
+    each model grid point.  In calculating Ze, the RIP algorithm makes
+    assumptions consistent with those made in an early version
+    (ca. 1996) of the bulk mixed-phase microphysical scheme in the MM5
+    model (i.e., the scheme known as "Resiner-2").  For each species:
+
+    1. Particles are assumed to be spheres of constant density.  The
+    densities of rain drops, snow particles, and graupel particles are
+    taken to be rho_r = rho_l = 1000 kg m^-3, rho_s = 100 kg m^-3, and
+    rho_g = 400 kg m^-3, respectively. (l refers to the density of
+    liquid water.)
+
+    2. The size distribution (in terms of the actual diameter of the
+    particles, rather than the melted diameter or the equivalent solid
+    ice sphere diameter) is assumed to follow an exponential
+    distribution of the form N(D) = N_0 * exp( lambda*D ).
+
+    3. If ivarint=0, the intercept parameters are assumed constant
+    (as in early Reisner-2), with values of 8x10^6, 2x10^7,
+    and 4x10^6 m^-4, for rain, snow, and graupel, respectively.
+    If ivarint=1, variable intercept parameters are used, as
+    calculated in Thompson, Rasmussen, and Manning (2004, Monthly
+    Weather Review, Vol. 132, No. 2, pp. 519-542.)
+
+    4. If iliqskin=1, frozen particles that are at a temperature above
+    freezing are assumed to scatter as a liquid particle.
+
+    More information on the derivation of simulated reflectivity in
+    RIP can be found in Stoelinga (2005, unpublished write-up).
+    Contact Mark Stoelinga (stoeling@atmos.washington.edu) for a copy.
+    """
+    # Set values for constants with variable intercept
+    R1 = 1e-15
+    RON = 8e6
+    RON2 = 1e10
+    SON = 2e7
+    GON = 5e7
+    RON_MIN = 8e6
+    RON_QR0 = 0.00010
+    RON_DELQR0 = 0.25*RON_QR0
+    RON_CONST1R = (RON2-RON_MIN)*0.5
+    RON_CONST2R = (RON2+RON_MIN)*0.5
+
+    # set constant intercepts
+    rno_l = 8e6
+    rno_s = 2e7
+    rno_g = 4e6
+
+    qvapor = da.clip(vapor_mixing_ratio, 0., None)
+    qliquid = da.clip(liquid_mixing_ratio, 0., None)
+
+    # If qgraupel but not qsnow, set qgraupel = qsnow
+    if snow_mixing_ratio is None:
+        if graupel_mixing_ratio is None:
+            qsnow = da.zeros_like(qliquid)
+            qgraupel = da.zeros_like(qliquid)
+        else:
+            qgraupel = da.clip(graupel_mixing_ratio, 0., None)
+            qsnow = da.zeros_like(graupel_mixing_ratio)
+            qsnow[temperature <= 273.15] = qgraupel[temperature <= 273.15]
+    else:
+        qsnow = da.clip(snow_mixing_ratio, 0., None)
+        qgraupel = da.clip(graupel_mixing_ratio, 0., None)
+
+    # density for liquid, snow, and graupel (kg m-3)
+    rho_l = 1000.  # liquid
+    rho_i = 100.  # snow
+    rho_g = 400.  # graupel
+
+    # constant evaluation of gamma distribution
+    gamma = 720.
+
+    # Alpha constant
+    alpha = 0.224
+
+    # constant multiplication factors
+    factor_l = gamma * 1e18 * (1./(np.pi*rho_l))**1.75
+    s = gamma * 1e18 * (1./(np.pi*rho_i))**1.75 * (rho_i/rho_l)**2 * alpha
+    g = gamma * 1e18 * (1./(np.pi*rho_g))**1.75 * (rho_g/rho_l)**2 * alpha
+
+    # calculate virtual temperature
+    virtual_t = virtual_temperature(temperature, qvapor)
+
+    # dry gas constant
+    Rd = 287.
+    rho_air = pressure/(Rd*virtual_t)
+
+    # adjust for brightband if use_liqskin=True
+    if use_liqskin:
+        raise NotImplementedError('Liquid skin correction not implemented')
+        # factor_s = da.full_like(temperature, s)
+        # factor_g = da.full_like(temperature, g)
+        # try:
+        #     factor_s[temperature >= 273.15] = factor_s[temperature >= 273.15] / da.array([alpha])
+        #     factor_g[temperature >= 273.15] = factor_g[temperature >= 273.15] / da.array([alpha])
+        # except ValueError:
+        #     factor_s = s
+        #     factor_g = g
+    else:
+        factor_s = s
+        factor_g = g
+
+    # calculate variable intercept if use_varint=True
+    if use_varint:
+        raise NotImplementedError('Variable intercepts not yet implemented')
+        # temp_c = da.clip(temperature-273.15, temperature.min(), -0.001)
+        # sonv = MIN(2.0D8, 2.0D6*EXP(-0.12D0*temp_c))
+        #
+        # gonv = gon
+        # IF (qgr(i,j,k) .GT. R1) THEN
+        #     gonv = 2.38D0 * (PI*RHO_G/(rhoair*qgr(i,j,k)))**0.92D0
+        #     gonv = MAX(1.D4, MIN(gonv,GON))
+        # END IF
+        #
+        # ronv = RON2
+        # IF (qra(i,j,k) .GT. R1) THEN
+        #     ronv = RON_CONST1R*TANH((RON_QR0 - qra(i,j,k))/RON_DELQR0) + RON_CONST2R
+        # END IF
+    else:
+        ronv = rno_l
+        sonv = rno_s
+        gonv = rno_g
+
+    # Total equivalent reflectivity factor (z_e, in mm^6 m^-3) is
+    # the sum of z_e for each hydrometeor species:
+    z_e = (((factor_l*(rho_air*qliquid)**1.75)/(ronv**.75)) +
+           ((factor_s*(rho_air*qsnow)**1.75)/(sonv**.75)) +
+           ((factor_g*(rho_air*qgraupel)**1.75)/(gonv**.75)))
+
+    # Adjust small values of Z_e so that dBZ is no lower than -30
+    z_e = da.clip(z_e, .001, None)
+
+    # Convert to dBZ
+    dbz = 10.*da.log10(z_e)
+    return dbz
+
+
+def virtual_temperature(temperature, mixing, molecular_weight_ratio=0.622):
+    r"""Calculate virtual temperature.
+
+    This calculation must be given an air parcel's temperature and mixing ratio.
+    The implementation uses the formula outlined in [Hobbs2006]_ pg.80. Taken from metpy.calc
+    and modified for Dask support.
+
+    Parameters
+    ----------
+    temperature:
+        air temperature
+    mixing :
+        dimensionless mass mixing ratio
+    molecular_weight_ratio : float, optional
+        The ratio of the molecular weight of the constituent gas to that assumed
+        for air. Defaults to the ratio for water vapor to dry air.
+        (:math:`\epsilon\approx0.622`).
+
+    Returns
+    -------
+        The corresponding virtual temperature of the parcel
+
+    Notes
+    -----
+    .. math:: T_v = T \frac{\text{w} + \epsilon}{\epsilon\,(1 + \text{w})}
+
+    """
+    return temperature * ((mixing + molecular_weight_ratio)
+                          / (molecular_weight_ratio * (1 + mixing)))
+
+
+def exner_function(pressure, reference_pressure=P0):
+    r"""Calculate the Exner function. From metpy.calc.
+    .. math:: \Pi = \left( \frac{p}{p_0} \right)^\kappa
+    This can be used to calculate potential temperature from temperature (and visa-versa),
+    since
+    .. math:: \Pi = \frac{T}{\theta}
+    Parameters
+    ----------
+    pressure :
+        total atmospheric pressure, units should match reference pressure (default is Pa)
+    reference_pressure :
+        The reference pressure against which to calculate the Exner function, defaults to
+        metpy.constants.P0
+    Returns
+    -------
+        The value of the Exner function at the given pressure
+    See Also
+    --------
+    potential_temperature
+    temperature_from_potential_temperature
+    """
+    return (pressure / reference_pressure)**kappa
+
+
+def temperature_from_potential_temperature(pressure, potential_temperature, reference_pressure=P0):
+    r"""Calculate the temperature from a given potential temperature.
+    Uses the inverse of the Poisson equation to calculate the temperature from a
+    given potential temperature at a specific pressure level. Taken from metpy.calc and modified for Dask.
+    Parameters
+    ----------
+    pressure :
+        total atmospheric pressure, units should match reference pressure (default is Pa).
+    potential_temperature :
+        potential temperature
+    reference_pressure :
+        The reference pressure against which to calculate the Exner function, defaults to
+        metpy.constants.P0
+    Returns
+    -------
+        The temperature corresponding to the potential temperature and pressure.
+    See Also
+    --------
+    dry_lapse
+    potential_temperature
+    Notes
+    -----
+    Formula:
+    .. math:: T = \Theta (P / P_0)^\kappa
+    """
+    return potential_temperature * exner_function(pressure, reference_pressure=reference_pressure)
