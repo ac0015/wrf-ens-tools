@@ -16,6 +16,7 @@ import numpy as np
 from sklearn.neighbors import BallTree
 import dask.array as da
 import xarray as xr
+import metpy.constants as constants
 import wrf
 from netCDF4 import Dataset
 from datetime import timedelta, datetime
@@ -32,6 +33,9 @@ from shutil import copyfile
 import warnings
 
 package_dir = os.path.dirname(os.path.abspath(__file__))
+
+P0 = constants.P0.to('Pa').m
+kappa = constants.kappa.m
 
 dflt_var = ['td2', 'T2']
 dflt_pres = [300., 500., 700., 850., 925.]
@@ -1315,9 +1319,9 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         ds.mixing_ratio_2m.attrs['units'] = indata.Q2.units
 
     # 10-m winds on model grid
-    u10 = indata.U10
-    v10 = indata.V10
-    ds['u_10m'] = (('time', 'y', 'x'), u10.data)
+    u10 = indata.U10.data
+    v10 = indata.V10.data
+    ds['u_10m'] = (('time', 'y', 'x'), u10)
     ds.u_10m.attrs['description'] = 'U-component of wind at 10 meters (model-relative)'
     if indata.U10.units == 'm s-1':
         ds.u_10m.attrs['units'] = 'meter/second'
@@ -1325,7 +1329,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         warnings.warn('Unknown velocity units {} encountered'.format(indata.U10.units))
         ds.u_10m.attrs['units'] = indata.U10.units
 
-    ds['v_10m'] = (('time', 'y', 'x'), v10.data)
+    ds['v_10m'] = (('time', 'y', 'x'), v10)
     ds.v_10m.attrs['description'] = 'V-component of wind at 10 meters (model-relative)'
     if indata.V10.units == 'm s-1':
         ds.v_10m.attrs['units'] = 'meter/second'
@@ -1334,10 +1338,10 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         ds.v_10m.attrs['units'] = indata.V10.units
 
     # 10-m winds earth relative
-    sinalpha = indata.SINALPHA
-    cosalpha = indata.COSALPHA
+    sinalpha = indata.SINALPHA.data
+    cosalpha = indata.COSALPHA.data
     u10_rot, v10_rot = earth_relative_winds(u10, v10, sinalpha, cosalpha)
-    ds['u_10m_earth_relative'] = (('time', 'y', 'x'), u10_rot.data.compute())
+    ds['u_10m_earth_relative'] = (('time', 'y', 'x'), u10_rot)
     ds.u_10m_earth_relative.attrs['description'] = 'U-component of wind at 10 meters (earth-relative)'
     if indata.U10.units == 'm s-1':
         ds.u_10m_earth_relative.attrs['units'] = 'meter/second'
@@ -1345,7 +1349,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         warnings.warn('Unknown velocity units {} encountered'.format(indata.U10.units))
         ds.u_10m_earth_relative.attrs['units'] = indata.U10.units
 
-    ds['v_10m_earth_relative'] = (('time', 'y', 'x'), v10_rot.data.compute())
+    ds['v_10m_earth_relative'] = (('time', 'y', 'x'), v10_rot)
     ds.v_10m_earth_relative.attrs['description'] = 'V-component of wind at 10 meters (earth-relative)'
     if indata.V10.units == 'm s-1':
         ds.v_10m_earth_relative.attrs['units'] = 'meter/second'
@@ -1388,6 +1392,22 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
     else:
         warnings.warn('Unknown pressure unit {} encountered'.format(indata.P.units))
         ds.pressure.attrs['units'] = indata.P.units
+
+    theta = indata.T + 300.
+    ds['potential_temperature'] = (('time', 'z', 'y', 'x'), theta.data)
+    if indata.T.units == 'K':
+        ds.potential_temperature.attrs['units'] = 'Kelvin'
+    else:
+        warnings.warn('Unknown pressure unit {} encountered'.format(indata.T.units))
+        ds.potential_temperature.attrs['units'] = indata.T.units
+
+    temp = temperature_from_potential_temperature(ds.pressure, ds.potential_temperature, )
+    ds['temperature'] = temp
+    if indata.T.units == 'K':
+        ds.temperature.attrs['units'] = 'Kelvin'
+    else:
+        warnings.warn('Unknown pressure unit {} encountered'.format(indata.T.units))
+        ds.temperature.attrs['units'] = indata.T.units
 
     # Vapor mixing ratio
     ds['vapor_mixing_ratio'] = (('time', 'z', 'y', 'x'), indata.QVAPOR.data)
@@ -1432,25 +1452,27 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
     try:
         ds['snow_mixing_ratio'] = (('time', 'z', 'y', 'x'), indata.QSNOW.data)
         ds.snow_mixing_ratio.attrs['description'] = 'Snow mixing ratio'
+        qsnow = indata.QSNOW.data
         if indata.QSNOW.units == 'kg kg-1':
             ds.snow_mixing_ratio.attrs['units'] = 'dimensionless'
         else:
             warnings.warn('Unknown unit {} encountered'.format(indata.QSNOW.units))
             ds.snow_mixing_ration.attrs['units'] = indata.QSNOW.units
     except AttributeError:
-        pass
+        qsnow = None
 
     # Graupel mixing ratio
     try:
         ds['graupel_mixing_ratio'] = (('time', 'z', 'y', 'x'), indata.QGRAUP.data)
         ds.graupel_mixing_ratio.attrs['description'] = 'Graupel mixing ratio'
+        qgraupel = indata.QGRAUP.data
         if indata.QGRAUP.units == 'kg kg-1':
             ds.graupel_mixing_ratio.attrs['units'] = 'dimensionless'
         else:
             warnings.warn('Unknown unit {} encountered'.format(indata.QGRAUP.units))
             ds.graupel_mixing_ratio.attrs['units'] = indata.QGRAUP.units
     except AttributeError:
-        pass
+        qgraupel = None
 
     # Ice number concentration
     try:
@@ -1499,7 +1521,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         ds.v_wind.attrs['units'] = indata.V.units
 
     # earth-relative
-    u_rot, v_rot = earth_relative_winds(u, v, sinalpha.data[:, np.newaxis, ], cosalpha.data[:, np.newaxis, ])
+    u_rot, v_rot = earth_relative_winds(u, v, sinalpha[:, np.newaxis, ], cosalpha[:, np.newaxis, ])
 
     ds['u_wind_earth_relative'] = (('time', 'z', 'y', 'x'), u_rot)
     ds.u_wind_earth_relative.attrs['description'] = 'U-component of wind (earth-relative)'
@@ -1546,6 +1568,11 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
     except AttributeError:
         pass
 
+    refl = simulated_reflectivity(ds['pressure'].data, ds.temperature.data, ds['vapor_mixing_ratio'].data,
+                                  ds['rain_mixing_ratio'].data, snow_mixing_ratio=qsnow,
+                                  graupel_mixing_ratio=qgraupel)
+    ds['simulated_reflectivity'] = (('time', 'z', 'y', 'x'), refl)
+    ds.simulated_reflectivity.attrs['units'] = 'dBZ'
     return ds
 
 
@@ -1624,3 +1651,245 @@ def lcc_projection(indata, r=6370000):
     x = da.arange(nx) * dx + x0
     y = da.arange(ny) * dy + y0
     return x, y
+
+
+def simulated_reflectivity(pressure, temperature, vapor_mixing_ratio, liquid_mixing_ratio, snow_mixing_ratio=None,
+                           graupel_mixing_ratio=None, use_varint=False, use_liqskin=False):
+    """
+    Calculate the simulated reflectivity factor from model output.
+    Ported from RIP fortran calculation used in the WRF-Python package.
+    :param pressure: model pressure in Pa
+    :param temperature: model temperature in Kelvin
+    :param vapor_mixing_ratio: water vapor mixing ratio
+    :param liquid_mixing_ratio: liquid water mixing ratio
+    :param snow_mixing_ratio: snow mixing ratio, optional
+    :param graupel_mixing_ratio: graupel mixing ratio, optional
+    :param use_varint: When set to False,
+        the intercept parameters are assumed constant
+        (as in MM5's Reisner-2 bulk microphysical scheme).
+        When set to True, the variable intercept
+        parameters are used as in the more recent version of Reisner-2
+        (based on Thompson, Rasmussen, and Manning, 2004, Monthly weather
+        Review, Vol. 132, No. 2, pp. 519-542.).
+    :param use_liqskin: When set to True, frozen particles
+        that are at a temperature above freezing are assumed to scatter
+        as a liquid particle.  Set to False to disable.
+
+    This routine computes equivalent reflectivity factor (in dBZ) at
+    each model grid point.  In calculating Ze, the RIP algorithm makes
+    assumptions consistent with those made in an early version
+    (ca. 1996) of the bulk mixed-phase microphysical scheme in the MM5
+    model (i.e., the scheme known as "Resiner-2").  For each species:
+
+    1. Particles are assumed to be spheres of constant density.  The
+    densities of rain drops, snow particles, and graupel particles are
+    taken to be rho_r = rho_l = 1000 kg m^-3, rho_s = 100 kg m^-3, and
+    rho_g = 400 kg m^-3, respectively. (l refers to the density of
+    liquid water.)
+
+    2. The size distribution (in terms of the actual diameter of the
+    particles, rather than the melted diameter or the equivalent solid
+    ice sphere diameter) is assumed to follow an exponential
+    distribution of the form N(D) = N_0 * exp( lambda*D ).
+
+    3. If ivarint=0, the intercept parameters are assumed constant
+    (as in early Reisner-2), with values of 8x10^6, 2x10^7,
+    and 4x10^6 m^-4, for rain, snow, and graupel, respectively.
+    If ivarint=1, variable intercept parameters are used, as
+    calculated in Thompson, Rasmussen, and Manning (2004, Monthly
+    Weather Review, Vol. 132, No. 2, pp. 519-542.)
+
+    4. If iliqskin=1, frozen particles that are at a temperature above
+    freezing are assumed to scatter as a liquid particle.
+
+    More information on the derivation of simulated reflectivity in
+    RIP can be found in Stoelinga (2005, unpublished write-up).
+    Contact Mark Stoelinga (stoeling@atmos.washington.edu) for a copy.
+    """
+    # Set values for constants with variable intercept
+    R1 = 1e-15
+    RON = 8e6
+    RON2 = 1e10
+    SON = 2e7
+    GON = 5e7
+    RON_MIN = 8e6
+    RON_QR0 = 0.00010
+    RON_DELQR0 = 0.25*RON_QR0
+    RON_CONST1R = (RON2-RON_MIN)*0.5
+    RON_CONST2R = (RON2+RON_MIN)*0.5
+
+    # set constant intercepts
+    rno_l = 8e6
+    rno_s = 2e7
+    rno_g = 4e6
+
+    qvapor = da.clip(vapor_mixing_ratio, 0., None)
+    qliquid = da.clip(liquid_mixing_ratio, 0., None)
+
+    # If qgraupel but not qsnow, set qgraupel = qsnow
+    if snow_mixing_ratio is None:
+        if graupel_mixing_ratio is None:
+            qsnow = da.zeros_like(qliquid)
+            qgraupel = da.zeros_like(qliquid)
+        else:
+            qgraupel = da.clip(graupel_mixing_ratio, 0., None)
+            qsnow = da.zeros_like(graupel_mixing_ratio)
+            qsnow[temperature <= 273.15] = qgraupel[temperature <= 273.15]
+    else:
+        qsnow = da.clip(snow_mixing_ratio, 0., None)
+        qgraupel = da.clip(graupel_mixing_ratio, 0., None)
+
+    # density for liquid, snow, and graupel (kg m-3)
+    rho_l = 1000.  # liquid
+    rho_i = 100.  # snow
+    rho_g = 400.  # graupel
+
+    # constant evaluation of gamma distribution
+    gamma = 720.
+
+    # Alpha constant
+    alpha = 0.224
+
+    # constant multiplication factors
+    factor_l = gamma * 1e18 * (1./(np.pi*rho_l))**1.75
+    s = gamma * 1e18 * (1./(np.pi*rho_i))**1.75 * (rho_i/rho_l)**2 * alpha
+    g = gamma * 1e18 * (1./(np.pi*rho_g))**1.75 * (rho_g/rho_l)**2 * alpha
+
+    # calculate virtual temperature
+    virtual_t = virtual_temperature(temperature, qvapor)
+
+    # dry gas constant
+    Rd = 287.
+    rho_air = pressure/(Rd*virtual_t)
+
+    # adjust for brightband if use_liqskin=True
+    if use_liqskin:
+        raise NotImplementedError('Liquid skin correction not implemented')
+        # factor_s = da.full_like(temperature, s)
+        # factor_g = da.full_like(temperature, g)
+        # try:
+        #     factor_s[temperature >= 273.15] = factor_s[temperature >= 273.15] / da.array([alpha])
+        #     factor_g[temperature >= 273.15] = factor_g[temperature >= 273.15] / da.array([alpha])
+        # except ValueError:
+        #     factor_s = s
+        #     factor_g = g
+    else:
+        factor_s = s
+        factor_g = g
+
+    # calculate variable intercept if use_varint=True
+    if use_varint:
+        raise NotImplementedError('Variable intercepts not yet implemented')
+        # temp_c = da.clip(temperature-273.15, temperature.min(), -0.001)
+        # sonv = MIN(2.0D8, 2.0D6*EXP(-0.12D0*temp_c))
+        #
+        # gonv = gon
+        # IF (qgr(i,j,k) .GT. R1) THEN
+        #     gonv = 2.38D0 * (PI*RHO_G/(rhoair*qgr(i,j,k)))**0.92D0
+        #     gonv = MAX(1.D4, MIN(gonv,GON))
+        # END IF
+        #
+        # ronv = RON2
+        # IF (qra(i,j,k) .GT. R1) THEN
+        #     ronv = RON_CONST1R*TANH((RON_QR0 - qra(i,j,k))/RON_DELQR0) + RON_CONST2R
+        # END IF
+    else:
+        ronv = rno_l
+        sonv = rno_s
+        gonv = rno_g
+
+    # Total equivalent reflectivity factor (z_e, in mm^6 m^-3) is
+    # the sum of z_e for each hydrometeor species:
+    z_e = (((factor_l*(rho_air*qliquid)**1.75)/(ronv**.75)) +
+           ((factor_s*(rho_air*qsnow)**1.75)/(sonv**.75)) +
+           ((factor_g*(rho_air*qgraupel)**1.75)/(gonv**.75)))
+
+    # Adjust small values of Z_e so that dBZ is no lower than -30
+    z_e = da.clip(z_e, .001, None)
+
+    # Convert to dBZ
+    dbz = 10.*da.log10(z_e)
+    return dbz
+
+
+def virtual_temperature(temperature, mixing, molecular_weight_ratio=0.622):
+    r"""Calculate virtual temperature.
+
+    This calculation must be given an air parcel's temperature and mixing ratio.
+    The implementation uses the formula outlined in [Hobbs2006]_ pg.80. Taken from metpy.calc
+    and modified for Dask support.
+
+    Parameters
+    ----------
+    temperature:
+        air temperature
+    mixing :
+        dimensionless mass mixing ratio
+    molecular_weight_ratio : float, optional
+        The ratio of the molecular weight of the constituent gas to that assumed
+        for air. Defaults to the ratio for water vapor to dry air.
+        (:math:`\epsilon\approx0.622`).
+
+    Returns
+    -------
+        The corresponding virtual temperature of the parcel
+
+    Notes
+    -----
+    .. math:: T_v = T \frac{\text{w} + \epsilon}{\epsilon\,(1 + \text{w})}
+
+    """
+    return temperature * ((mixing + molecular_weight_ratio)
+                          / (molecular_weight_ratio * (1 + mixing)))
+
+
+def exner_function(pressure, reference_pressure=P0):
+    r"""Calculate the Exner function. From metpy.calc.
+    .. math:: \Pi = \left( \frac{p}{p_0} \right)^\kappa
+    This can be used to calculate potential temperature from temperature (and visa-versa),
+    since
+    .. math:: \Pi = \frac{T}{\theta}
+    Parameters
+    ----------
+    pressure :
+        total atmospheric pressure, units should match reference pressure (default is Pa)
+    reference_pressure :
+        The reference pressure against which to calculate the Exner function, defaults to
+        metpy.constants.P0
+    Returns
+    -------
+        The value of the Exner function at the given pressure
+    See Also
+    --------
+    potential_temperature
+    temperature_from_potential_temperature
+    """
+    return (pressure / reference_pressure)**kappa
+
+
+def temperature_from_potential_temperature(pressure, potential_temperature, reference_pressure=P0):
+    r"""Calculate the temperature from a given potential temperature.
+    Uses the inverse of the Poisson equation to calculate the temperature from a
+    given potential temperature at a specific pressure level. Taken from metpy.calc and modified for Dask.
+    Parameters
+    ----------
+    pressure :
+        total atmospheric pressure, units should match reference pressure (default is Pa).
+    potential_temperature :
+        potential temperature
+    reference_pressure :
+        The reference pressure against which to calculate the Exner function, defaults to
+        metpy.constants.P0
+    Returns
+    -------
+        The temperature corresponding to the potential temperature and pressure.
+    See Also
+    --------
+    dry_lapse
+    potential_temperature
+    Notes
+    -----
+    Formula:
+    .. math:: T = \Theta (P / P_0)^\kappa
+    """
+    return potential_temperature * exner_function(pressure, reference_pressure=reference_pressure)
