@@ -1200,26 +1200,22 @@ def destagger(var, stagger_dim):
     return result
 
 
-def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
+def open_wrf_dataset(inname, nest='static', chunks=None):
     """
     Runs the WRF Post Processor
     :param inname: string of input file path
     :param nest: string, 'moving' for a moving nest simulation
-    :param dask: bool, Specify whether to use dask as backend
     :param chunks: optional dictionary to specify chunks by each dimension. See dask chunks.
     :return: Xarray Dataset of CF-compliant WRF output
     """
     # open the input file
     # specify chunks if not given
-    if dask:
-        if chunks is None:
-            chunks = {'Time': 50, 'west_east': 100, 'west_east_stag': 100,
-                      'south_north': 100, 'south_north_stag': 100,
-                      'bottom_top': 10, 'bottom_top_stag': 10}
+    if chunks is None:
+        chunks = {'Time': 50, 'west_east': 100, 'west_east_stag': 100,
+                  'south_north': 100, 'south_north_stag': 100,
+                  'bottom_top': 10, 'bottom_top_stag': 10}
 
-        indata = xr.open_dataset(inname, chunks=chunks)
-    else:
-        indata = xr.open_dataset(inname, chunks=chunks)
+    indata = xr.open_dataset(inname, chunks=chunks)
 
     # Set up output dataset with desired dimensions
     coords = {}
@@ -1243,8 +1239,10 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
                                                                   '%Y-%m-%d_%H:%M:%S').strftime('%Y-%m-%dT%H:%M:%S')
         elif attr == 'MOAD_CEN_LAT':
             ds.attrs['central_latitude'] = indata.MOAD_CEN_LAT
-        # elif attr == 'CEN_LON':
-        #     ds.attrs['central_longitude'] = indata.CEN_LON
+        elif attr == 'CEN_LON':
+            continue
+        elif attr == 'CEN_LAT':
+            continue
         elif attr == 'TRUELAT1':
             ds.attrs['true_latitude_1'] = indata.TRUELAT1
         elif attr == 'TRUELAT2':
@@ -1252,40 +1250,49 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         elif attr == 'STAND_LON':
             ds.attrs['standard_longitude'] = indata.STAND_LON
         elif attr == 'MAP_PROJ_CHAR':
-            ds.attrs['projection'] = indata.MAP_PROJ_CHAR
-        elif attr == 'WEST-EAST_GRID_DIMENSION':
+            continue  # projection metadata added during grid computation
+        elif attr == 'MAP_PROJ':  # Ignore map projection numeric ID
             continue
-        elif attr =='SOUTH-NORTH_GRID_DIMENSION':
+        elif 'WEST-EAST' in attr:
             continue
-        elif attr == 'BOTTOM-TOP_GRID_DIMENSION':
+        elif 'SOUTH-NORTH' in attr:
+            continue
+        elif 'BOTTOM-TOP' in attr:
             continue
         elif attr == 'DX':
             ds.attrs['dx'] = indata.DX
         elif attr == 'DY':
             ds.attrs['dy'] = indata.DY
+        elif attr == 'POLE_LAT':
+            ds.attrs['pole_latitude'] = indata.POLE_LAT
+        elif attr == 'POLE_LON':
+            ds.attrs['pole_longitude'] = indata.POLE_LON
         else:
             ds.attrs[attr] = indata.attrs[attr]
 
     # Calculate the model projection x and y coordinates
     # TODO: Add support for more projections
-    r = 6370000
-    x_model, y_model = lcc_projection(indata, r=r)
-    ds['x'] = x_model
-    ds.x.attrs['description'] = 'Projection x coordinate'
-    ds['y'] = y_model
-    ds.y.attrs['description'] = 'Projection y coordinate'
+    if indata.MAP_PROJ_CHAR == 'Lambert Conformal':
+        r = 6370000
+        x_model, y_model = lcc_projection(indata, r=r)
+        ds['x'] = x_model
+        ds.x.attrs['description'] = 'Projection x coordinate'
+        ds['y'] = y_model
+        ds.y.attrs['description'] = 'Projection y coordinate'
 
-    # add projection information
-    ds.attrs['projection'] = 'Lambert Conformal Conic'
-    ds.attrs['semimajor_axis'] = r
-    ds.attrs['semiminor_axis'] = r
-    ds.attrs['ellipse'] = 'sphere'
+        # add projection information
+        ds.attrs['projection'] = 'Lambert Conformal Conic'
+        ds.attrs['semimajor_axis'] = r
+        ds.attrs['semiminor_axis'] = r
+        ds.attrs['ellipse'] = 'sphere'
+    else:
+        raise NotImplementedError('Input projection {} not supported'.format(indata.MAP_PROJ_CHAR))
 
     # combine and write precipitation variables
     ds['total_precipitation'] = (('time', 'y', 'x'), (indata.RAINC + indata.RAINNC).data)
     ds.total_precipitation.attrs['description'] = 'Total Accumulated Precipitation'
     if indata.RAINC.units == 'mm':
-        ds.total_precipitation.attrs['units'] = 'milimeter'
+        ds.total_precipitation.attrs['units'] = 'millimeter'
     else:
         warnings.warn('Unknown precipitation unit {} encountered'.format(indata.RAINC.units))
         ds.total_precipitation.attrs['units'] = indata.RAINC.units
@@ -1361,7 +1368,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
     ds['surface_pressure'] = (('time', 'y', 'x'), indata.PSFC.data)
     ds.surface_pressure.attrs['description'] = 'Pressure at surface (not reduced)'
     if indata.PSFC.units == 'Pa':
-        ds.surface_pressure.attrs['units'] = 'Pascal'
+        ds.surface_pressure.attrs['units'] = 'pascal'
     else:
         warnings.warn('Unknown pressure unit {} encountered'.format(indata.PSFC.units))
         ds.surface_pressure.attrs['units'] = indata.PSFC.units
@@ -1388,7 +1395,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
     ds['pressure'] = (('time', 'z', 'y', 'x'), p.data)
     ds.pressure.attrs['description'] = 'Full model pressure'
     if indata.P.units == 'Pa':
-        ds.pressure.attrs['units'] = 'Pascal'
+        ds.pressure.attrs['units'] = 'pascal'
     else:
         warnings.warn('Unknown pressure unit {} encountered'.format(indata.P.units))
         ds.pressure.attrs['units'] = indata.P.units
@@ -1396,7 +1403,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
     theta = indata.T + 300.
     ds['potential_temperature'] = (('time', 'z', 'y', 'x'), theta.data)
     if indata.T.units == 'K':
-        ds.potential_temperature.attrs['units'] = 'Kelvin'
+        ds.potential_temperature.attrs['units'] = 'kelvin'
     else:
         warnings.warn('Unknown pressure unit {} encountered'.format(indata.T.units))
         ds.potential_temperature.attrs['units'] = indata.T.units
@@ -1404,7 +1411,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
     temp = temperature_from_potential_temperature(ds.pressure, ds.potential_temperature, )
     ds['temperature'] = temp
     if indata.T.units == 'K':
-        ds.temperature.attrs['units'] = 'Kelvin'
+        ds.temperature.attrs['units'] = 'kelvin'
     else:
         warnings.warn('Unknown pressure unit {} encountered'.format(indata.T.units))
         ds.temperature.attrs['units'] = indata.T.units
@@ -1479,7 +1486,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         ds['ice_number_concentration'] = (('time', 'z', 'y', 'x'), indata.QNICE.data)
         ds.ice_number_concentration.attrs['description'] = 'Ice number concentration'
         if indata.QNICE.units == '  kg-1':
-            ds.ice_number_concentration.attrs['units'] = 'kiligram**-1'
+            ds.ice_number_concentration.attrs['units'] = 'kilogram**-1'
         else:
             warnings.warn('Unknown unit {} encountered'.format(indata.QNICE.units))
             ds.ice_number_concentration.attrs['units'] = indata.QNICE.units
@@ -1491,7 +1498,7 @@ def open_wrf_dataset(inname, nest='static', dask=True, chunks=None):
         ds['rain_number_concentration'] = (('time', 'z', 'y', 'x'), indata.QNRAIN.data)
         ds.rain_number_concentration.attrs['description'] = 'Rain number concentration'
         if indata.QNRAIN.units == '  kg(-1)':
-            ds.rain_number_concentration.attrs['units'] = 'kiligram**-1'
+            ds.rain_number_concentration.attrs['units'] = 'kilogram**-1'
         else:
             warnings.warn('Unknown unit {} encountered'.format(indata.QNRAIN.units))
             ds.rain_number_concentration.attrs['units'] = indata.QNRAIN.units
