@@ -45,9 +45,8 @@ sensvars = [['300_hPa_GPH', '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind',
 percents = [0., 10., 20., 30., 40., 50., 60., 70., 80., 90.]
 dbz_thresh = [40., 50.]
 nbrs = [30.0]
-pperfnbrs = [80.0]
 rfunctions = ["Refl Coverage"] # , "UH Maximum"]
-analysis = ["WRF"] #, "RAP"]
+analysis = ["RAP"] #, "RAP"]
 analysis_fhr = 0
 resp_variable = 'reflectivity'
 ########################################################################
@@ -144,11 +143,12 @@ for rfunc in rfunctions:
                 sub = Subset(S, nbrhd=nbr, analysis_type=anl,
                                  wrfanalysis_to_post_path=fullpath,
                                  thresh=thresh)
-                if os.path.exists(sub.getAnalysis()) == False:
-                    if anl == "WRF":
-                       sub.processWRFAnalysis(True)
-                    elif anl == "RAP":
-                        sub.interpRAP()
+                if os.path.exists(sub.getAnalysis()) == True:
+                    os.remove(sub.getAnalysis())
+                if anl == "WRF":
+                    sub.processWRFAnalysis(True)
+                elif anl == "RAP":
+                    sub.interpRAP()
             del sub
             if sixhour:
                 statspath = direc + 'MAEcorrected_refl_sixhr_stats_sig1_nbr30_stime{}.nc'.format(S.getSensTime())

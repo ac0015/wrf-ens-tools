@@ -5,7 +5,7 @@ c$$$ module_netcdf.f and module_wrf_tools.f if the .mod files don't exist)
 c$$$ Also, remove enscalc before compiling with Makefile.  Lastly, make sure to
 c$$$ copy a single ens member over to all of the outfiles (see below)
 
-c$$$ This program reads data from fens files and anal files and
+c$$$ This program reads data from fens files and analysis files and
 c$$$ calculates ensemble senstivity values for six hour response functions
 
 c$$$ Originally by Brian Ancell; adapted for six-hour response functions

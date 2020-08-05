@@ -11,6 +11,7 @@ from scipy import interpolate
 from siphon import ncss
 import subprocess
 import os
+import pyart
 
 ###########################################################
 # Austin Coleman
@@ -82,9 +83,10 @@ def interpRAPtoWRF(yr, mo, day, hr, wrfref):
     RAP to interpolated RAP to ensure that the interpolation worked.
     """
     # Read RAP datset
-    rap = ncss.NCSS("https://www.ncei.noaa.gov/thredds/ncss/grid/rap130anl/{}{}/{}{}{}/rap_130_{}{}{}_{}_000.grb2".format(yr,
-                    mo, yr, mo, day, yr, mo, day, hr))
+    # rap = ncss.NCSS("https://www.ncei.noaa.gov/thredds/ncss/grid/rap130anl/{}{}/{}{}{}/rap_130_{}{}{}_{}_000.grb2".format(yr,
+    #                 mo, yr, mo, day, yr, mo, day, hr))
 
+    rap = ncss.NCSS(f"https://www.ncei.noaa.gov/thredds/ncss/model-rap130anl-old/{yr}{mo}/{yr}{mo}{day}/rap_130_{yr}{mo}{day}_{hr}_000.grb2")
     # Develop query
     query = ncss.NCSSQuery()
     query.variables('all')
@@ -291,7 +293,7 @@ def reflectivity_to_eventgrid(interp_gridradfiles, runinitdate,
     return agg_refl_mask
 
 def horiz_interp_and_store_gridrad(gridrad_file, interpto_file, out_file,
-                                    zlev):
+                                    zlev, gridrad_version=3):
     """
     Horizontally interpolates reflectivity from a GridRad file
     to a WRF grid of choice.
@@ -303,6 +305,7 @@ def horiz_interp_and_store_gridrad(gridrad_file, interpto_file, out_file,
                             you wish to interpolate the GridRad data to
     out_file ------------- absolute path to store interpolated GridRad data
     zlev ----------------- zero-based vertical level to interpolate
+    gridrad_version ------ version of gridrad dictates date naming conventionss
 
     Outputs
     -------
@@ -346,7 +349,10 @@ def horiz_interp_and_store_gridrad(gridrad_file, interpto_file, out_file,
     print(mode)
     nc_out = Dataset(out_file, mode)
     print(mode)
-    nc_out.STARTDATE = og_gridrad.datehour.values
+    if gridrad_version == 3:
+        nc_out.STARTDATE = og_gridrad.datehour.values
+    elif gridrad_version == 4:
+        nc_out.STARTDATE = og_gridrad.Analysis_time
     if mode == "w":
         nc_out.createDimension('Time', size=None)
         nc_out.createDimension('south_north', size=len(lats[:,0]))

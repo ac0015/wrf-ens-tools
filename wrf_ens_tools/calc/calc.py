@@ -80,7 +80,7 @@ def nearest_neighbor_ttu(runinitdate, sixhr, rtime, nbrhd=0.,
         with open(rptfile) as csvf:
             r = csv.reader(csvf)
             mylist = list(r)
-    except IOError:
+    except:
         print('Report CSV file could not be opened.')
         sys.exit()
 
@@ -152,7 +152,7 @@ def nearest_neighbor_ttu(runinitdate, sixhr, rtime, nbrhd=0.,
         except:
             grid = np.zeros_like(lon)
 
-        return grid
+    return grid
 
 def calc_prac_perf(runinitdate, sixhr, rtime, nbrhd=0., sigma=2):
     """
@@ -472,7 +472,7 @@ def gen_surrogate_severe_reports(uh_arr, sim_refl_arr, uh_thresh,
     xinds, yinds = np.meshgrid(np.arange(len(lons[0,:])), np.arange(len(lats[:])))
     # print(np.shape(yinds), np.shape(xinds))
 
-    # Get lats and lons for practically perfect grid
+    # Get lats and lons for practically perfect grid (only used if spc_grid=True)
     ppfile = '{}/pperf_grid_template.npz'.format(package_dir)
     f = np.load(ppfile)
     lon = f["lon"]
@@ -741,9 +741,9 @@ def FSSnetcdf(probpath, obspath, fhr, var='updraft_helicity',
     print("Fcst hr for FSS calc: ", fhrs[obind])
 
     # Choose correct indices based on variable and threshold
-    probinds = {'reflectivity': {40: 0, 50: 5},
-                'updraft_helicity': {25: 1, 40: 2, 100: 3},
-                'wind_speed': {40: 4}}
+    probinds = {'reflectivity': {40: 0, 50: 4},
+                'updraft_helicity': {25: 1, 40: 2, 100: 3}}
+
     # If UH, pull practically perfect
     if var == 'updraft_helicity':
         obs = obsdat.variables['practically_perfect'][:]
@@ -982,9 +982,8 @@ def ReliabilityRbox(probpath, runinitdate, fhr,  rboxpath, obpath=None,
     probdat = Dataset(probpath)
 
     # Choose correct indices based on variable and threshold
-    probinds = {'reflectivity' : {40 : 0, 50 : 5},
-                'updraft_helicity' : {25 : 1, 40 : 2, 100 : 3},
-                'wind_speed' : {40 : 4}}
+    probinds = {'reflectivity' : {40 : 0, 50 : 4},
+                'updraft_helicity' : {25 : 1, 40 : 2, 100 : 3}}
 
     if var == 'updraft_helicity':
         if obpath is not None:
@@ -1007,6 +1006,7 @@ def ReliabilityRbox(probpath, runinitdate, fhr,  rboxpath, obpath=None,
     r = nbrhd/dx
     # Get arrays of x and y indices for distance calculations
     xinds, yinds = np.meshgrid(np.arange(len(lons[0,:])), np.arange(len(lats[:])))
+    print(xinds, yinds)
 
     # Sort probabilities into bins
     fcstfreq_tot = np.zeros((len(prob_bins)))   # N probs falling into bin for whole domain
@@ -1267,6 +1267,11 @@ def calc_refl_cov_rbox(interpgridradfiles, rboxpath, zlev, refl_thresh):
                                 #dims=['times', 'latitude', 'longitude'])
         da.name = "Reflectivity"
         dat = xr.concat([dat, da], dim='times')
+
+    dat.to_netcdf("refl_concat.nc")
+    # Close initial files
+    for ds in dats:
+        ds.close()
 
     # Build rbox mask
     lonmask = (lons >= rbox_bounds[0]) & (lons < rbox_bounds[1])

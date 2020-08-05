@@ -221,7 +221,8 @@ class Subset:
         interpRAPtoWRF(yr, mo, day, hr, self.getSens().getRefFileD1())
         return
 
-    def processWRFAnalysis(self, half_post_processed=False):
+    def processWRFAnalysis(self, half_post_processed=False, rand_err=False,
+                            rand_err_std_dev=0.):
         """
         If using WRF analysis, must call this function to post-process
         all necessary sensitivity variables for subsetting. Returns NULL
@@ -230,12 +231,33 @@ class Subset:
         argument is associated with the post-processing technique implemented
         by Team Bancell and has a specific function for post-processing (if
         you don't know what this last part means then you won't need to use it).
+
+        Inputs
+        ------
+        self ---------------- instance of Subset object
+        half_post_processed - boolean specific to Brian's TTU WRF analysis
+                              post-processing, if not working with that dataset
+                              always leave False
+        rand_err ------------ optional boolean specifying whether to add random
+                              error to analysis. Only works with idealized
+                              settings
+        rand_err_std_dev ---- if rand_err is set to True, may provide the
+                              standard deviation of observation error to add to
+                              the analysis. Adds this to ALL variables in the
+                              analysis, so only recommended for specific use
+                              cases
+
+        Outputs
+        -------
+        Returns NULL but produces netCDF with naming conventions described by
+        the analysis attribute of the Subset object
         """
         if half_post_processed:
             postTTUWRFanalysis(self._wrfpath_to_post_proc, self._analysis)
         elif self._idealized or self._semi_idealized:
             postIdealizedAnalysis(self._sensvalfile, self._analysis,
-                                self._truth_member)
+                                self._truth_member, rand_err=rand_err,
+                                rand_err_std_dev=rand_err_std_dev)
         else:
             # Use default vars for process_wrf and default naming conventions.
             process_wrf(self._wrfpath_to_post_proc, outpath=self._analysis, reduced=True)
@@ -434,93 +456,93 @@ class Subset:
                       nbrhd=self._nbr)
         return
 
-    def storeUHStatsCSV(self, outpath, pperfpath, reliabilityobpath):
-        """
-        Stores UH verification stats to csv file.
-
-        Inputs
-        ------
-        outpath ----------- absolute output filepath as a string
-        pperfpath --------- absolute filepath for practically perfect
-                            gridded data
-        reliabilityobpath - absolute filepath for reliability observational
-                            point data on ensemble grid
-
-        Outputs
-        -------
-        returns NULL and stores UH verification stats to outpath as csv
-        """
-        S = self.getSens()
-        fensprobpath = S.getDir() + "probs/" + self._fensprob
-        subprobpath = S.getDir() + "probs/" + self._subprob
-        rtimedate = S.getRunInit() + timedelta(hours=S.getRTime())
-        if os.path.exists(pperfpath):
-            fens_fss = FSSnetcdf(fensprobpath, pperfpath, rtimedate, var='updraft_helicity',
-                      thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
-            sub_fss = FSSnetcdf(subprobpath, pperfpath, rtimedate, var='updraft_helicity',
-                      thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
-            fens_reliability = ReliabilityRbox(fensprobpath, S.getRunInit(),
-                                          S.getRTime(),
-                                          obpath=reliabilityobpath,
-                                          var='updraft_helicity',
-                                          thresh=self._thresh,
-                                          rboxpath=S.getDir()+'esens.in',
-                                          sixhr=False, nbrhd=self._nbr)
-            sub_reliability = ReliabilityRbox(subprobpath,
-                                          S.getRunInit(), S.getRTime(),
-                                          obpath=reliabilityobpath,
-                                          var='updraft_helicity',
-                                          thresh=self._thresh,
-                                          rboxpath=S.getDir()+'esens.in',
-                                          sixhr=False, nbrhd=self._nbr)
-            # prob_bins will stay the same, so OK to clobber
-            prob_bins, f_fcstfreq_rbox, f_ob_hr_rbox = fens_reliability
-            prob_bins, s_fcstfreq_rbox, s_ob_hr_rbox = sub_reliability
-            fens_rel_dict = {'rel_bins' : prob_bins,
-                            'fcst_freq_rbox' : f_fcstfreq_rbox,
-                            'ob_hr_rbox' : f_ob_hr_rbox}
-            sub_rel_dict = {'rel_bins' : prob_bins,
-                            'fcst_freq_rbox' : s_fcstfreq_rbox,
-                            'ob_hr_rbox' : s_ob_hr_rbox}
-            # fens_rel_dict = np.asarray([prob_bins, f_fcstfreq_rbox,
-            #                             f_ob_hr_rbox], dtype=float)
-            # sub_rel_dict = np.asarray([prob_bins, s_fcstfreq_rbox,
-            #                             s_ob_hr_rbox], dtype=float)
-            f_fss_tot, f_fss_rbox, sig = fens_fss
-            s_fss_tot, s_fss_rbox, sig = sub_fss
-        else:
-            raise FileNotFoundError('Please run storePracPerf() or set correct obpath.')
-        if os.path.exists(outpath):
-            mode = 'a'
-        else:
-            mode = 'w'
-        # Open file with specified mode
-        with open(outpath, mode=mode) as outfile:
-            if mode == 'w':
-                # If new file, add header row
-                cols = ['Run_Init', 'Sens_Time', 'Subset_Size',
-                        'Analysis', 'Sens_Vars', 'Subset_Method',
-                        'Sens_Threshold', 'Response_Func',
-                        'Response_Time', 'Response_Box',
-                        'Full_Ens_FSS_Total', 'Full_Ens_FSS_Rbox',
-                        'Subset_FSS_Total', 'Subset_FSS_Rbox',
-                        'Prac_Perf_Sigma', 'Neighborhood',
-                        'Response_Thresh', 'Sub_Members',
-                        'Full_Ens_Reliability_Rbox',
-                        'Subset_Reliability_Rbox']
-                outfile_writer = csv.writer(outfile, delimiter=',')
-                outfile_writer.writerow(cols)
-            # Add row valid for current subset
-            entry = [str(S.getRunInit()), S.getSensTime(), self._subsize,
-                     self._analysis_type, self._sensvars,
-                     list(self._methodchoices.keys())[self._method-1],
-                     self._percent, S.getRString(), S.getRTime(), S.getRbox(),
-                     f_fss_tot, f_fss_rbox, s_fss_tot, s_fss_rbox,
-                     sig[0], self._nbr, self._thresh, self.getSubMembers(),
-                     fens_rel_dict, sub_rel_dict]
-            outfile_writer = csv.writer(outfile, delimiter=',')
-            outfile_writer.writerow(entry)
-        return
+    # def storeUHStatsCSV(self, outpath, pperfpath, reliabilityobpath):
+    #     """
+    #     Stores UH verification stats to csv file.
+    #
+    #     Inputs
+    #     ------
+    #     outpath ----------- absolute output filepath as a string
+    #     pperfpath --------- absolute filepath for practically perfect
+    #                         gridded data
+    #     reliabilityobpath - absolute filepath for reliability observational
+    #                         point data on ensemble grid
+    #
+    #     Outputs
+    #     -------
+    #     returns NULL and stores UH verification stats to outpath as csv
+    #     """
+    #     S = self.getSens()
+    #     fensprobpath = S.getDir() + "probs/" + self._fensprob
+    #     subprobpath = S.getDir() + "probs/" + self._subprob
+    #     rtimedate = S.getRunInit() + timedelta(hours=S.getRTime())
+    #     if os.path.exists(pperfpath):
+    #         fens_fss = FSSnetcdf(fensprobpath, pperfpath, rtimedate, var='updraft_helicity',
+    #                   thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
+    #         sub_fss = FSSnetcdf(subprobpath, pperfpath, rtimedate, var='updraft_helicity',
+    #                   thresh=self._thresh, rboxpath=S.getDir()+'esens.in')
+    #         fens_reliability = ReliabilityRbox(fensprobpath, S.getRunInit(),
+    #                                       S.getRTime(),
+    #                                       obpath=reliabilityobpath,
+    #                                       var='updraft_helicity',
+    #                                       thresh=self._thresh,
+    #                                       rboxpath=S.getDir()+'esens.in',
+    #                                       sixhr=False, nbrhd=self._nbr)
+    #         sub_reliability = ReliabilityRbox(subprobpath,
+    #                                       S.getRunInit(), S.getRTime(),
+    #                                       obpath=reliabilityobpath,
+    #                                       var='updraft_helicity',
+    #                                       thresh=self._thresh,
+    #                                       rboxpath=S.getDir()+'esens.in',
+    #                                       sixhr=False, nbrhd=self._nbr)
+    #         # prob_bins will stay the same, so OK to clobber
+    #         prob_bins, f_fcstfreq_rbox, f_ob_hr_rbox = fens_reliability
+    #         prob_bins, s_fcstfreq_rbox, s_ob_hr_rbox = sub_reliability
+    #         fens_rel_dict = {'rel_bins' : prob_bins,
+    #                         'fcst_freq_rbox' : f_fcstfreq_rbox,
+    #                         'ob_hr_rbox' : f_ob_hr_rbox}
+    #         sub_rel_dict = {'rel_bins' : prob_bins,
+    #                         'fcst_freq_rbox' : s_fcstfreq_rbox,
+    #                         'ob_hr_rbox' : s_ob_hr_rbox}
+    #         # fens_rel_dict = np.asarray([prob_bins, f_fcstfreq_rbox,
+    #         #                             f_ob_hr_rbox], dtype=float)
+    #         # sub_rel_dict = np.asarray([prob_bins, s_fcstfreq_rbox,
+    #         #                             s_ob_hr_rbox], dtype=float)
+    #         f_fss_tot, f_fss_rbox, sig = fens_fss
+    #         s_fss_tot, s_fss_rbox, sig = sub_fss
+    #     else:
+    #         raise FileNotFoundError('Please run storePracPerf() or set correct obpath.')
+    #     if os.path.exists(outpath):
+    #         mode = 'a'
+    #     else:
+    #         mode = 'w'
+    #     # Open file with specified mode
+    #     with open(outpath, mode=mode) as outfile:
+    #         if mode == 'w':
+    #             # If new file, add header row
+    #             cols = ['Run_Init', 'Sens_Time', 'Subset_Size',
+    #                     'Analysis', 'Sens_Vars', 'Subset_Method',
+    #                     'Sens_Threshold', 'Response_Func',
+    #                     'Response_Time', 'Response_Box',
+    #                     'Full_Ens_FSS_Total', 'Full_Ens_FSS_Rbox',
+    #                     'Subset_FSS_Total', 'Subset_FSS_Rbox',
+    #                     'Prac_Perf_Sigma', 'Neighborhood',
+    #                     'Response_Thresh', 'Sub_Members',
+    #                     'Full_Ens_Reliability_Rbox',
+    #                     'Subset_Reliability_Rbox']
+    #             outfile_writer = csv.writer(outfile, delimiter=',')
+    #             outfile_writer.writerow(cols)
+    #         # Add row valid for current subset
+    #         entry = [str(S.getRunInit()), S.getSensTime(), self._subsize,
+    #                  self._analysis_type, self._sensvars,
+    #                  list(self._methodchoices.keys())[self._method-1],
+    #                  self._percent, S.getRString(), S.getRTime(), S.getRbox(),
+    #                  f_fss_tot, f_fss_rbox, s_fss_tot, s_fss_rbox,
+    #                  sig[0], self._nbr, self._thresh, self.getSubMembers(),
+    #                  fens_rel_dict, sub_rel_dict]
+    #         outfile_writer = csv.writer(outfile, delimiter=',')
+    #         outfile_writer.writerow(entry)
+    #     return
 
     def storeUHStatsNetCDF(self, outpath, pperfpath, reliabilityobpath,
                             bssobpath):
@@ -626,19 +648,8 @@ class Subset:
             llon, ulon, llat, ulat = np.array(S.getRbox(), dtype=float)
             lonmask = (lons > llon) & (lons < ulon)
             latmask = (lats > llat) & (lats < ulat)
-            # print(f"llon: {llon}, ulon: {ulon}, llat: {llat}, ulat: {ulat}")
             mask = lonmask & latmask
-            # print(lons[mask], lats[mask])
             del(lons); del(lats)
-            # masked_fens_probs = fens_probs.to_masked_array()/100.
-            # masked_fens_probs.soften_mask()
-            # masked_fens_probs.mask = ~mask
-            # masked_sub_probs = sub_probs.to_masked_array()/100.
-            # masked_sub_probs.soften_mask()
-            # masked_sub_probs.mask = ~mask
-            # masked_obs = bss_obs.to_masked_array()
-            # masked_obs.soften_mask()
-            # masked_obs.mask = ~(mask & (bss_obs <= 9e36))
             masked_fens_probs = np.ma.masked_array(fens_probs/100., mask=~mask)
             masked_sub_probs = np.ma.masked_array(sub_probs/100., mask=~mask)
             masked_obs = np.ma.masked_array(bss_obs, mask=~(mask & (bss_obs <= 9e36)))
@@ -916,10 +927,6 @@ class Subset:
                  'Response_Time': (['subset'], np.atleast_1d(S.getRTime())),
                  'Response_Box': (['subset', 'rbox'],
                                     np.atleast_2d(S.getRbox())),
-                 #'Full_Ens_FSS_Total': (['subset'], np.atleast_1d(f_fss_tot)),
-                 #'Full_Ens_FSS_Rbox': (['subset'], np.atleast_1d(f_fss_rbox)),
-                 #'Subset_FSS_Total': (['subset'], np.atleast_1d(s_fss_tot)),
-                 #'Subset_FSS_Rbox': (['subset'], np.atleast_1d(s_fss_rbox)),
                  'Full_Ens_MAE_Rbox' : (['subset'], np.atleast_1d(fens_abs_err)),
                  'Subset_MAE_Rbox': (['subset'], np.atleast_1d(sub_abs_err)),
                  'Neighborhood': (['subset'], np.atleast_1d(self._nbr)),
@@ -1115,8 +1122,109 @@ class Subset:
 
         return
 
+    def oberrorAddedIdealizedStoreRfuncStatsNetCDF(self, outpath,
+                                                rvalspath="Rvals.nc"):
+        """
+        Stores response function verification stats for an idealized experiment
+        in which a randomly selected ensemble member serves as truth and is
+        used to compute response errors directly. This version is meant to run
+        with ob error added to the early analysis.
+
+        Inputs
+        ------
+        outpath ----------- absolute output filepath as a string
+        rvalspath --------- name of netCDF file produced from
+                            sixhresens that stores member response values
+
+        Outputs
+        -------
+        returns NULL and stores UH verification stats to outpath as netCDF4
+        """
+        if self._idealized:
+            S = self.getSens()
+            rstring_to_rindex = {"6-hr Max UH": "UH_MAX",
+                                 "6-hr UH Coverage": "UH_COV",
+                                 "6-hr Max Refl": "DBZ_MAX",
+                                 "6-hr Refl Coverage": "DBZ_COV"}
+            truthmem_ind = self._truth_member - 1
+            # Open member response values
+            rvals_dat = Dataset(S.getDir() + rvalspath)
+            # Create entry as xarray dataset
+            sens_vars = np.empty((1, 30), dtype="U30")
+            sens_vars[0, :len(self._sensvars)] = np.asarray(self._sensvars[:])
+            sub_mems = np.zeros((1,len(self._fullens)), dtype=int) * np.NaN
+            sub_mems[0, :len(self.getSubMembers())-1] = np.asarray(self.getSubMembers())[self.getSubMembers() != self._truth_member]
+            # assert(self.getSubMembers()[0] == self._truth_member)
+            truth_rval = rvals_dat[rstring_to_rindex[S.getRString()]][truthmem_ind]
+            # Make sure to ignore truth member in error calculations
+            # Truth member inclusion in subset gives the subset unfair advantage
+            subRMS = np.zeros((self._subsize-1))
+            fensRMS = np.zeros_like(self._fullens[self._fullens != self._truth_member])
+            print(subRMS.shape, fensRMS.shape)
+            print(truth_rval)
+            print("CALCULATING SUBSET MEMBER RMSE'S...")
+            print(self.getSubMembers())
+            print(rstring_to_rindex[S.getRString()])
+            responses = rvals_dat.variables[rstring_to_rindex[S.getRString()]][:]
+            # Ignore truth member in spread calculations too
+            sub_rvals_spread = np.var(responses[self.getSubMembers()[self.getSubMembers() != self._truth_member]-1])
+            fens_rvals_spread = np.var(responses[~np.in1d(range(len(responses)),truthmem_ind)])
+            # print(responses[truthmem_ind], responses[~np.in1d(range(len(responses)),truthmem_ind)])
+            for ind, submem in enumerate(self.getSubMembers()
+                                [self.getSubMembers() != self._truth_member]):
+                rval = responses[submem-1]
+                print("Member:", submem, "Response Val:", rval)
+                subRMS[ind] = rmse(predictions=rval, targets=truth_rval)
+            print("Subset Mean RMSE:", np.mean(subRMS))
+            print("CALCULATING FULL ENS MEMBER RMSE'S...")
+            for ind, fensmem in enumerate(self._fullens[self._fullens != self._truth_member]):
+                rval = responses[fensmem-1]
+                print("Member:", fensmem, "Response Val:", rval)
+                fensRMS[ind] = rmse(predictions=rval, targets=truth_rval)
+            print("Full Ens Mean RMSE:", np.mean(fensRMS))
+
+            ds = xr.Dataset({'Sens_Time': (['subset'], np.atleast_1d(S.getSensTime())),
+                     'Subset_Size': (['subset'], np.atleast_1d(self._subsize)),
+                     'Sens_Vars':  (['subset', 'sensvar'],
+                                    np.atleast_2d(sens_vars)),
+                     'Subset_Method': (['subset'],
+                        np.atleast_1d(list(self._methodchoices.keys())[self._method-1])),
+                     'Sens_Threshold': (['subset'], np.atleast_1d(self._percent)),
+                     'Response_Func': (['subset'], np.atleast_1d(S.getRString())),
+                     'Response_Time': (['subset'], np.atleast_1d(S.getRTime())),
+                     'Response_Box': (['subset', 'rbox'],
+                                        np.atleast_2d(S.getRbox())),
+                     'Full_Ens_RMSE_Rbox': (['subset'], np.atleast_1d(np.mean(fensRMS))),
+                     'Full_Ens_Response_Spread': (['subset'], np.atleast_1d(fens_rvals_spread)),
+                     'Subset_RMSE_Rbox': (['subset'], np.atleast_1d(np.mean(subRMS))),
+                     'Subset_Response_Spread': (['subset'], np.atleast_1d(sub_rvals_spread)),
+                     'RMSE_Diff': (['subset'], np.atleast_1d(np.mean(subRMS)-np.mean(fensRMS))),
+                     'Neighborhood': (['subset'], np.atleast_1d(self._nbr)),
+                     'Response_Thresh': (['subset'], np.atleast_1d(self._thresh)),
+                     'Subset_Members': (['subset', 'submems'],
+                                        sub_mems)},
+                     coords={'run': S.getRunInit(),
+                             # 'subset': np.arange(1),
+                             'rbox': ['llon', 'ulon', 'llat', 'ulat']})
+            if os.path.exists(outpath):
+                og_ds = xr.open_dataset(outpath)
+                print("Opened original dataset...")
+                ds = xr.concat([og_ds, ds], dim='subset', data_vars='minimal')
+                og_ds.close()
+                print("Appended new dataset to original dataset...\n\n", ds)
+            print("FINAL DATASET TO WRITE:", ds)
+            ds.to_netcdf("test.nc", unlimited_dims=['subset', 'rthresh'],
+                        format="NETCDF4", mode='w')
+            os.rename("test.nc", outpath)
+            ds.close()
+        else:
+            print("ERROR! Attempt to run idealized experiment with a real subset obj")
+            raise
+
+        return
+
     def semiIdealizedStoreUHStatsNetCDF(self, outpath, pperfpath,
-                                    reliabilityobpath, spc_grid,
+                                    reliabilityobpath, bssobpath, spc_grid,
                                     spc_sigma=None):
         """
         Stores UH verification stats for a semi-idealized experiment in
@@ -1248,6 +1356,46 @@ class Subset:
                 s_fcstfreq_rbox = sub_reliability["fcst_frequency"]
                 s_ob_hr_rbox = sub_reliability["ob_hit_rate"]
                 sub_reliability.close()
+                ####################################################################
+                # Calculate BSS using probabilistic forecast and binary observations
+                # Same as FSS except binary obs
+                ####################################################################
+                fens_prob_ds = xr.open_dataset(fensprobpath)
+                sub_prob_ds = xr.open_dataset(subprobpath)
+                # Choose correct indices based on variable and threshold
+                probinds = {'reflectivity': {40: 0, 50: 5},
+                            'updraft_helicity': {25: 1, 40: 2, 100: 3},
+                            'wind_speed': {40: 4}}
+                index = probinds['updraft_helicity'][self._thresh]
+                # Pull probabilities
+                fens_probs = np.asarray(fens_prob_ds["P_HYD"])[0, index]
+                sub_probs = np.asarray(sub_prob_ds["P_HYD"])[0, index]
+                fens_prob_ds.close(); sub_prob_ds.close()
+                # Open binary observation dataset
+                bss_ob_ds = xr.open_dataset(bssobpath)
+                bss_obs = np.asarray(bss_ob_ds["nearest_neighbor"][0])
+                bss_ob_ds.close()
+                # Mask obs/fcst
+                ref_ds = xr.open_dataset(S.getRefFileD2())
+                lons = np.asarray(ref_ds["XLONG"].values[0], dtype=float)
+                lats = np.asarray(ref_ds["XLAT"].values[0], dtype=float)
+                ref_ds.close()
+                llon, ulon, llat, ulat = np.array(S.getRbox(), dtype=float)
+                lonmask = (lons > llon) & (lons < ulon)
+                latmask = (lats > llat) & (lats < ulat)
+                mask = lonmask & latmask
+                del(lons); del(lats)
+                masked_fens_probs = np.ma.masked_array(fens_probs/100., mask=~mask)
+                masked_sub_probs = np.ma.masked_array(sub_probs/100., mask=~mask)
+                masked_obs = np.ma.masked_array(bss_obs, mask=~(mask & (bss_obs <= 9e36)))
+                # print("NANMAX BSS OBS", np.nanmax(masked_obs))
+                # print("Rbox probs", masked_fens_probs)
+                # Calculate BSS!
+                f_bss_rbox = FSS(masked_fens_probs, masked_obs)
+                print(f"Full Ens BSS: {f_bss_rbox}")
+                s_bss_rbox = FSS(masked_sub_probs, masked_obs)
+                print(f"Subset BSS: {s_bss_rbox}")
+                ####################################################################
             else:
                 raise FileNotFoundError('Please run storePracPerf() or \
                 set correct obpath.')
@@ -1271,6 +1419,8 @@ class Subset:
                      'Full_Ens_FSS_Rbox': (['subset'], np.atleast_1d(f_fss_rbox)),
                      'Subset_FSS_Total': (['subset'], np.atleast_1d(s_fss_tot)),
                      'Subset_FSS_Rbox': (['subset'], np.atleast_1d(s_fss_rbox)),
+                     'Full_Ens_BSS_Rbox': (['subset'], np.atleast_1d(f_bss_rbox)),
+                     'Subset_BSS_Rbox': (['subset'], np.atleast_1d(s_bss_rbox)),
                      'Prac_Perf_Sigma': (['subset'], np.atleast_1d(sig[0])),
                      'Neighborhood': (['subset'], np.atleast_1d(self._nbr)),
                      'Response_Thresh': (['subset'], np.atleast_1d(self._thresh)),
@@ -1385,10 +1535,6 @@ class Subset:
         """
         # Get sens object and double-check response function is correct
         S = self.getSens()
-        # if S.getSixHour():
-        #     assert(S.getRString() == "6-hr UH Coverage")
-        # else:
-        #     assert(S.getRString() == "1-hr UH Coverage")
 
         # Define full ensemble and subset members
         # Ensure subset has already been generated
@@ -1431,19 +1577,6 @@ class Subset:
                                 targets=np.ones_like(sub_fcsts)*lsr_count_rbox)
         print("Subset MAE:", sub_mae)
         rvals.close()
-
-        # # If appending, read in the csv as pandas dataframe first
-        # if append:
-        #     df = pd.read_csv(outpath)
-        #     df.append({'rfunc': [S.getRString()],
-        #                 'fens_mae': [fens_mae],
-        #                 'sub_mae': [sub_mae]})
-        #     df.to_csv(outpath)
-        # else:
-        #     df = pd.DataFrame({'rfunc': [S.getRString()],
-        #                 'fens_mae': [fens_mae],
-        #                 'sub_mae': [sub_mae]})
-        #     df.to_csv(outpath)
 
         # Create entry as xarray dataset
         sens_vars = np.empty((1, 30), dtype="U30")

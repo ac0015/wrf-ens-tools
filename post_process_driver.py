@@ -45,7 +45,7 @@ sensvars = [['300_hPa_GPH', '300_hPa_T', '300_hPa_U-Wind', '300_hPa_V-Wind',
 percents = [0., 10., 20., 30., 40., 50., 60., 70., 80., 90.]
 uh_thresh = [25., 40., 100.]
 nbrs = [30.0]
-pperfnbrs = [81.0]
+pperfnbrs = [80.0]
 rfunctions = ["UH Coverage"] # , "UH Maximum"]
 analysis = ["WRF"] #, "RAP"]
 analysis_fhr = 0
@@ -80,6 +80,7 @@ for rfunc in rfunctions:
                 sub = Subset(S, nbrhd=nbr, thresh=thresh)
                 sub.calcProbs(sub._fullens)
                 outpath = direc + 'reliability_ob_nbr{}.nc'.format(int(nbr))
+                bssobpath = direc + 'bss_ob_nbr{}.nc'.format(int(nbr))
                 print("Currently in:", os.getcwd())
                 os.chdir(direc)
                 print("Changed to:", os.getcwd())
@@ -100,7 +101,7 @@ for rfunc in rfunctions:
                    os.remove(outpath)
                 post.storePracPerfSPCGrid(init, [rtime],
                                    str(outpath), nbrhd=pperfnbr,
-                                   dx=81., # Using 81-km SPC grid for AMS results
+                                   dx=pperfnbr, # Using 81-km SPC grid for AMS results
                                    sixhour=sixhour,
                                    wrfrefpath='/lustre/scratch/aucolema/2016052600/wrfoutREFd2')
                                    #dx=sub.getHorizGridSpacingD2()/1000.,
@@ -119,14 +120,17 @@ for rfunc in rfunctions:
                     fullpath = None
                 sub = Subset(S, nbrhd=nbr, analysis_type=anl,
                                  wrfanalysis_to_post_path=fullpath)
-                if os.path.exists(sub.getAnalysis()) == False:
-                    if anl == "WRF":
-                       sub.processWRFAnalysis(True)
-                    elif anl == "RAP":
-                        sub.interpRAP()
+                if os.path.exists(sub.getAnalysis()) == True:
+                    os.remove(sub.getAnalysis())
+                    print(f"removed {sub.getAnalysis()}...")
+                if anl == "WRF":
+                   sub.processWRFAnalysis(half_post_processed=True, rand_err=False,
+                                           rand_err_std_dev=0.)
+                elif anl == "RAP":
+                    sub.interpRAP()
             del sub
             if sixhour:
-                statspath = direc + 'sixhr_stats_sig1_nbr30_stime{}.nc'.format(S.getSensTime())
+                statspath = direc + 'OLD_BUG_CHECK_sixhr_stats_sig1_nbr30_stime{}.nc'.format(S.getSensTime())
             else:
                 statspath = direc + 'onehr_stats_sig1_nbr30.nc'
             # Get stats for different subset combos
@@ -144,10 +148,10 @@ for rfunc in rfunctions:
                                     print('Using subset obj:', str(sub))
                                     sub.calcSubset()
                                     sub.calcProbs(sub.getSubMembers())
-                                    #sub.plotSixPanels()
                                     reliabilityobpath = direc + 'reliability_ob_nbr{}.nc'.format(int(nbr))
                                     for obpath in pperfpaths:
                                         sub.storeUHStatsNetCDF(outpath=statspath,
                                                             pperfpath=obpath,
-                                                            reliabilityobpath=reliabilityobpath)
+                                                            reliabilityobpath=reliabilityobpath,
+                                                            bssobpath=bssobpath)
                                     del sub

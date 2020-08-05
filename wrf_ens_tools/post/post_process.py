@@ -487,7 +487,8 @@ def postTTUWRFanalysis(inpath, outpath,
     return
 
 def postIdealizedAnalysis(inpath, outpath, member,
-                        refpath='/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREF'):
+                        refpath='/lustre/research/bancell/aucolema/HWT2016runs/2016050800/wrfoutREF',
+                        rand_err=False, rand_err_std_dev=0.):
     """
     Siphons post-processed sensitivity variable values from a "SENSvals.nc" or
     similar file produced by the sensvector executable found in the sensitivity
@@ -506,6 +507,11 @@ def postIdealizedAnalysis(inpath, outpath, member,
                         pull from the input file.
     refpath ----------- absolute path to reference file containing geographical
                         data and other relevant metadata.
+    rand_err ---------- optional boolean - if set to True will add gaussian
+                        noise to analysis field using rand_err_std_dev
+    rand_err_std_dev -- if rand_err set to True, will use this option to
+                        set the standard deviation of random noise applied
+                        to *ALL VARIABLES* stored to analysis field
 
     Outputs
     -------
@@ -552,10 +558,19 @@ def postIdealizedAnalysis(inpath, outpath, member,
     # Open dataset and start pulling member fields
     member_fields = np.zeros((len(sensval_varstrings), wrf_jdim, wrf_idim))
     sensvar_dat = Dataset(inpath)
+
+    # Generate noise to add if rand_err = True
+    if rand_err:
+        noise = np.random.normal(0.,rand_err_std_dev,np.size(member_fields))
+        noise = noise.reshape(member_fields.shape)
+        print(noise, noise.shape)
+
     for ind, var in enumerate(sensval_varstrings):
         # print("SENSvals variable:", var, "New variable string", sensstringslist[ind])
         if var != "SKIP":
             member_fields[ind] = sensvar_dat[var][member-1][:]
+            if rand_err:
+                member_fields[ind] = member_fields[ind] + noise[ind]
             newvar = new_analysis.createVariable(
                                         sensstringslist[ind].replace(" ","_"),
                                         member_fields[ind].dtype,
@@ -691,7 +706,8 @@ def storePracPerfSPCGrid(modelinit, fcsthrs, outpath,
     return
 
 def storeIdealizedPracPef(sspf_arr, outlats, outlons, outpath,
-                            sigma, modelinit, fhrs, spc_grid=True):
+                            sigma, modelinit, fhrs, nbrhd=0.,
+                            spc_grid=True):
     """
     Takes array of pre-calculated surrogate severe probability forecast
     and meta data pertaining to that SSPF and stores it to a specified
@@ -721,6 +737,8 @@ def storeIdealizedPracPef(sspf_arr, outlats, outlons, outpath,
                         used
     fhrs -------------- array-like of forecast hours for which pperf is
                         valid
+    nbrhd ------------- optional searching distance to upscale gridded
+                        idealized LSRs
     spc_grid ---------- optional boolean describing whether original data
                         is stored on the SPC 211 grid, in which case data
                         will be interpolated to outlats/outlons
@@ -763,7 +781,7 @@ def storeIdealizedPracPef(sspf_arr, outlats, outlons, outpath,
 def storeNearestNeighbor(modelinit, fcsthr, outpath, sixhour=True,
                             wrfrefpath='/lustre/research/bancell/aucolema/HWT2016runs'
                                        '/2016050800/wrfoutREFd2',
-                            nbrhd=0.):
+                            nbrhd=0., dx=0., idealized=False, idealgrid=None):
     '''
     Calculate hourly nearest neighbor on WRF grid.
     Save to netCDF file for verification.
@@ -782,12 +800,20 @@ def storeNearestNeighbor(modelinit, fcsthr, outpath, sixhour=True,
     sixhour --- boolean specifying whether to store
                 six-hour or one-hour period of
                 nearest neighbor storm reports
+    dx -------- horizontal grid-spacing in km of response domain
     nbrhd ----- optional float to inflate observation
                 frequency grid by applying a searching
                 distance to observations. If this is
                 done for verification, neighborhood
                 should match probability neighborhood.
                 CURRENTLY ONLY COMPATIBLE W UH
+    idealized - optional boolean specifying whether to
+                use storm reports as grid to store or
+                user-provided grid of idealized reports
+    idealgrid - optional grid to store as idealized
+                observation netCDF. Only gets used if
+                idealized=True.
+
 
     Outputs
     -------
@@ -808,8 +834,20 @@ def storeNearestNeighbor(modelinit, fcsthr, outpath, sixhour=True,
     times = netcdf_out.createVariable('fhr', int, ('Time'))
     nearest_out = netcdf_out.createVariable('nearest_neighbor', float, ('Time',
                                             'south_north', 'west_east'))
-    # Populate outfile with nearest neighbor
-    grid = calc.nearest_neighbor_ttu(modelinit, sixhour, fcsthr, nbrhd=nbrhd,
+    # Populate outfile with nearest neighbor (clobber grid var)
+    if idealized:
+        # Loop through all points and
+        #   increment that grid cell by 1 if within nbrhd
+        gridinds = np.indices(idealgrid.shape)
+        xind, yind = np.where(idealgrid == 1)
+        print("xind, yind", xind, yind)
+        grid = np.zeros_like(idealgrid)
+        for xi, yi in zip(xind, yind):
+            dists = np.sqrt(((gridinds[0,:,:]-xi)*dx)**2 + ((gridinds[1,:,:]-yi)*dx)**2)
+            inds = np.where(dists <= nbrhd)
+            grid[inds] = 1
+    else:
+        grid = calc.nearest_neighbor_ttu(modelinit, sixhour, fcsthr, nbrhd=nbrhd,
                                     wrfrefpath=wrfrefpath)
     print(f"nearest neighbor min/max: {grid.min()}/{grid.max()}")
     nearest_out[:] = grid[:]
