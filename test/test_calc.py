@@ -9,8 +9,8 @@ from wrf_ens_tools.calc import FSS
 
 def test_FSS():
     """Test the FSS function."""
-    fcst = xr.open_dataset('test/data/forecast_probs.nc')
-    obs = xr.open_dataset('test/data/observation_probs.nc')
+    fcst = xr.open_dataset('test/forecast_probs.nc')
+    obs = xr.open_dataset('test/observation_probs.nc')
 
     actual_fss, actual_fbs, actual_fbs_ref = FSS(
         fcst.REFL_10CM_25.values,
