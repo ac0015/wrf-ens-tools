@@ -3,9 +3,9 @@ from setuptools import setup
 setup(
     name='wrf-ens-tools',
     version='0.1',
-    install_requires=['netcdf4', 'numpy', 'scipy', 'xarray', 'pandas', 'pyproj',
+    install_requires=['netcdf4', 'numpy', 'scipy', 'xarray', 'pandas', 'pyproj<3.0',
                       'wrf-python', 'matplotlib', 'siphon', 'cartopy', 'sklearn',
-                      'dask', 'metpy'],
+                      'dask', 'metpy>=1.0', 'cmocean'],
     license='BSD-3',
     author='Austin Coleman, Russel Manser, Tyler Wixtrom',
 )
