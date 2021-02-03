@@ -3,8 +3,10 @@ name: wrf-devel
 channels:
   - conda-forge/label/testing
   - conda-forge
+  - scitools
 dependencies:
   - python=3
+  - metpy=1
   - siphon
   - numpy
   - scipy
@@ -14,12 +16,13 @@ dependencies:
   - pandas
   - wrf-python
   - jupyter
-  - pytest>=2.4
+  - jupyterlab
+  - pytest
   - pytest-cov
   - pytest-flake8
   - pytest-mpl
   - pytest-runner
-  - flake8-builtins!=1.4.0
+  - flake8-builtins
   - flake8-comprehensions
   - flake8-copyright
   - flake8-docstrings
@@ -29,5 +32,7 @@ dependencies:
   - flake8-print
   - flake8-quotes
   - pep8-naming
-  - pyproj
+  - pyproj<3.0
   - cartopy
+  - dask
+  - cmocean
