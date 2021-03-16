@@ -617,49 +617,37 @@ def ens_frequency(ens_field, thresh, field='counts', axis=0):
 # Begin verification metrics
 #############################################################
 
-def FSS(fcstprobarray, obarray):
+def FSS(fcst, obs, return_fbs=False):
     """
-    Calculates fractions skill score for a probabilstic
-    ensemble forecast, Obs need to be pre-interpolated
-    to native model grid.
+    Calculate fractions skill score (FSS) for a probabilistic
+    ensemble forecast.
 
     Inputs
     ------
-    fcstprobarray ----- 2-D array-like that contains forecast
-                        to be verified.
-    obarray ----------- 2-D array-like that contains observations
-                        to verify fcstprobarray with. Should be same
-                        shape as fcstprobarray.
+    fcst --------- N x M numpy array that contains forecast probabilities.
+    obs ---------- N x M numpy array that contains observation probabilities.
+    return_fbs --- If true, return the fractions brier score and reference
+                   fractions brier score in addition to FSS. Default is False.
 
     Outputs
     -------
     Returns fss as a float for cases in which there are nonzero probabilities for
     one or both the observations and forecast. Otherwise, np.nan is returned.
     """
-    # First calculate FBS (Fractions Brier Score) on whole grid
-    probs = fcstprobarray
-    obs = obarray
-    npts = len(fcstprobarray[:,0]) * len(fcstprobarray[0,:])
-    fbs = 0.
-    fbs_worst = 0.
-    print('Max ens probs and max ob probs: ', np.max(probs), np.max(obs))
-
-    # Calculate FBS at each grid point and aggregate.
-    if (np.max(obs) > 0.) or (np.max(probs) > 0.):
-        for i in range(len(fcstprobarray[0,:])):
-            for j in range(len(fcstprobarray[:,0])):
-                fbs += (probs[j,i] - obs[j,i])**2
-                fbs_worst += probs[j,i]**2 + obs[j,i]**2
-        print('FBS: ', fbs)
-        fbs, fbs_worst = fbs/npts, fbs_worst/npts
-        # Use FBS and FBS worst to calculate FSS for whole grid
-        fss = 1 - (fbs/fbs_worst)
-        print("FSS and num points: ", fss, ',', npts)
+    if (np.max(fcst) > 0. or np.max(obs) > 0.):
+        npts = fcst.size
+        fbs = ((fcst - obs) ** 2).sum() / npts
+        fbs_worst = (fcst ** 2 + obs ** 2).sum() / npts
+        fss = 1 - fbs / fbs_worst
+    elif return_fbs:
+        return np.nan, np.nan, np.nan
     else:
-        print('NULL time/case, cannot calculate FSS')
         return np.nan
 
-    return fss
+    if return_fbs:
+        return fss, fbs, fbs_worst
+    else:
+        return fss
 
 def FSSnetcdf(probpath, obspath, fhr, var='updraft_helicity',
         thresh=25., rboxpath=None):
