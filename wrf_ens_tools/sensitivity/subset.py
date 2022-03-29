@@ -231,7 +231,8 @@ class Subset:
         you don't know what this last part means then you won't need to use it).
         """
         if half_post_processed:
-            postTTUWRFanalysis(self._wrfpath_to_post_proc, self._analysis)
+            postTTUWRFanalysis(self._wrfpath_to_post_proc, self._analysis,
+                                refpath=self.getSens().getRefFileD1())
         elif self._idealized or self._semi_idealized:
             postIdealizedAnalysis(self._sensvalfile, self._analysis,
                                 self._truth_member)
@@ -428,7 +429,7 @@ class Subset:
         rfunclabel = S.getRString().replace(' ','').lower()
         dirdate = str(yr) + str(mo) + str(day) + str(hr)
         plotSixPanels(dirdate, storm_reports,
-                      self.getSubMembers(), sixhour=False,
+                      self.getSubMembers(), sixhour=S.getSixHour(),
                       time=S.getRTime(), subsettype=rfunclabel,
                       nbrhd=self._nbr)
         return

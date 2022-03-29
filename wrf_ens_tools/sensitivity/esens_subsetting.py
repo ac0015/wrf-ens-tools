@@ -172,7 +172,7 @@ def ensSubset(wrfsensfile, analysis, memvalsfile, fullensnum,
            4: 'T_300', 5: 'T_500', 6: 'T_700', 7: 'T_850', 8: 'T_925',
            9: 'U_300', 10: 'U_500', 11: 'U_700', 12: 'U_850', 13: 'U_925',
            14: 'V_300', 15: 'V_500', 16: 'V_700', 17: 'V_850', 18: 'V_925',
-           20: 'SLP', 21: 'T2', 22: 'Q2', 23: 'TD2', 24: 'U10', 25: 'V10'}
+           19: 'Q_850', 20: 'SLP', 21: 'T2', 22: 'Q2', 23: 'TD2', 24: 'U10', 25: 'V10'}
     varkeys = [varkeydict[ind] for ind in sensinds]
     print("Sens keys for pulling from sensvector: ", varkeys)
 
