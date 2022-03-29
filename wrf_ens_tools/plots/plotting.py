@@ -126,12 +126,12 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2,
 
     #Make lists of report lats and lons
     try:
-    	with open(rptfile) as csvf:
+        with open(rptfile) as csvf:
             r = csv.reader(csvf)
             mylist = list(r)
     except IOError:
-    	print('Report CSV file could not be opened.')
-    	sys.exit()
+        print('Report CSV file could not be opened.')
+        sys.exit()
 
     length = len(mylist)-3
     time = [0]*length
@@ -161,7 +161,7 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2,
 
     #If there aren't any reports, practically perfect is zero across grid
     if length == 0:
-    	pperf = np.zeros_like(wrflon)
+        pperf = np.zeros_like(wrflon)
     #Otherwise, let's grid the reports
     else:
         # If six hour, mask reports by valid times in window
@@ -198,7 +198,7 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2,
             for xi, yi in zip(xind, yind):
                 grid[xi, yi] = 1
 
-        	# Gaussian smoother over our grid to create practically perfect probs
+            # Gaussian smoother over our grid to create practically perfect probs
             tmppperf = ndimage.gaussian_filter(grid,sigma=sigma, order=0)
 
             # Interpolate to WRF grid
@@ -238,7 +238,8 @@ def calc_prac_perf(runinitdate, sixhr, rtime, sigma=2,
 #    Lev 19 - neighborhood prob sfc wind speed exceeds 40mph SUBSET based on UH coverage (we probably won’t use this one)
 ################################################################################################
 
-def plotPracPerf(runinitdate, sixhr, rtime, sigma=2, outpath='pperf.png'):
+def plotPracPerf(runinitdate, sixhr, rtime, sigma=2, outpath='pperf.png',
+                reffile="/lustre/scratch/aucolema/2016052412/wrfoutREFd2"):
     '''
     Plotting SPC practically perfect
     calculations adapted from SPC code
@@ -260,7 +261,8 @@ def plotPracPerf(runinitdate, sixhr, rtime, sigma=2, outpath='pperf.png'):
     -------
     returns NULL and saves plot to outpath
     '''
-    pperf, lons, lats, rlons, rlats = calc_prac_perf(runinitdate, sixhr, rtime, sigma=sigma)
+    pperf, lons, lats, rlons, rlats = calc_prac_perf(runinitdate, sixhr, rtime, sigma=sigma,
+                                                    reffile=reffile)
     time = runinitdate + timedelta(hours=rtime)
     fig = plt.figure(figsize=(10, 10))
     # Build map
@@ -286,7 +288,7 @@ def plotPracPerf(runinitdate, sixhr, rtime, sigma=2, outpath='pperf.png'):
 def plotProbs(probpath, wrfrefpath, rbox, time, nbrhd, outpath='', subset=False):
     '''
     Plots probabilities for a specified time for each response
-    function (fullens and subset) given a probpath with all 
+    function (fullens and subset) given a probpath with all
     variables stored correctly in 'P_HYD' and overlays the response
     function box. Only supports 1-hr prob files, as it needs
     the SLP and 10m Wind means to plot.
@@ -1039,7 +1041,8 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
     meandescr = ['UH Max', 'DBZ Max', 'UH Max', 'UH Max', 'Wind Speed Avg']
 
     # Calculate SPC Practically Perfect Probs for plotting
-    pperf, plons, plats, rlons, rlats = calc_prac_perf(runinit, sixhour, time)
+    pperf, plons, plats, rlons, rlats = calc_prac_perf(runinit, sixhour, time,
+                    reffile="/lustre/scratch/aucolema/2016052412/wrfoutREFd2")
 
     # Begin plotting madness
     for i in range(len(figstrs)):
@@ -1193,8 +1196,11 @@ def plotSixPanels(dirdate, stormreports, submems, sixhour=True, time=None,
                 spaintballcbar = fig.colorbar(spaint, fraction=0.03, pad=0.04, orientation='vertical',
                                           ax=ax6,label='Subset Member Number')
         except:
+            raise
             print('No paintball vals to plot. Skipping')
-        fig.colorbar(fullprob, fraction=0.03, pad=0.04, ax=ax2, orientation='vertical',
+        fig.colorbar(fullprob, fraction=0.03, pad=0.04, ax=ax1, orientation='vertical',
+                     label='Probability (Percent)')
+        fig.colorbar(subprob, fraction=0.03, pad=0.04, ax=ax2, orientation='vertical',
                      label='Probability (Percent)')
         fig.colorbar(deltaprob, fraction=0.03, pad=0.04, ax=ax3, orientation='vertical',
                      label='Probability (Percent)', extend='both')
